@@ -21,33 +21,8 @@ matplotlib.use("QtAgg")                                 # 与 PySide6 配套的�
 from matplotlib.backends.backend_qtagg import (FigureCanvasQTAgg,
                                                NavigationToolbar2QT)
 from matplotlib.figure import Figure
-
-
-#: 占位文字用的中文字体候选（按常见 Windows 环境排序）
-_ZH_FONTS = ("Microsoft YaHei", "微软雅黑", "SimHei", "黑体",
-             "Noto Sans CJK SC", "Source Han Sans SC", "PingFang SC")
-_ZH_FONT_CACHE: list = []          # 只探测一次（字体扫描有成本）
-
-
-def _zh_font_family() -> Optional[str]:
-    """可用的第一个中文字体名；一个都没有返回 ``None``。
-
-    为什么不能只靠 ``font.sans-serif`` 列表：matplotlib **3.11 实测没有逐字形
-    回退**——把中文字体追加进字体链，遇到"尚无图件"这种中文串照样报
-    ``missing from font(s) DejaVu Sans`` 并画出豆腐块。而项目约定是
-    "Arial 优先、图件全英文"，所以只在**确实含中文的文本对象**上单独换字体。
-    """
-    if _ZH_FONT_CACHE:
-        return _ZH_FONT_CACHE[0] or None
-    fam: Optional[str] = None
-    try:
-        from matplotlib import font_manager
-        have = {f.name for f in font_manager.fontManager.ttflist}
-        fam = next((n for n in _ZH_FONTS if n in have), None)
-        _ZH_FONT_CACHE.append(fam or "")
-    except Exception:                                  # noqa: BLE001 —— 探测失败不致命
-        _ZH_FONT_CACHE.append("")
-    return fam
+from ui import theme
+from ui.widgets.cjk_fonts import cjk_family
 
 
 class MplCanvas(FigureCanvasQTAgg):
@@ -63,8 +38,11 @@ class MplCanvas(FigureCanvasQTAgg):
         self._set_placeholder("尚无图件")
 
     def _set_placeholder(self, text: str) -> None:
-        """画占位文字；有中文字体就用中文，没有则退回英文（不出豆腐块）。"""
-        fam = _zh_font_family()
+        """画占位文字；有中文字体就用中文，没有则退回英文（不出豆腐块）。
+
+        空画布跟随界面主题底色；载入图件时再换回白底（图件本身是白底产物）。"""
+        self.fig.set_facecolor(theme.hexc("surface"))
+        fam = cjk_family()
         shown = str(text)
         kwargs = {}
         if any(ord(ch) > 127 for ch in shown):
@@ -74,7 +52,7 @@ class MplCanvas(FigureCanvasQTAgg):
                 shown = shown.encode("ascii", "replace").decode("ascii")
         self._placeholder = self.ax.text(
             0.5, 0.5, shown, ha="center", va="center",
-            transform=self.ax.transAxes, color="0.6", **kwargs)
+            transform=self.ax.transAxes, color=theme.hexc("text_subtle"), **kwargs)
 
 
 class ZoomDialog(QDialog):
@@ -146,7 +124,7 @@ class CanvasPanel(QWidget):
         QShortcut(QKeySequence("Ctrl+Shift+C"), self,
                   activated=self.copy_current_image)
         self.lbl_pending = QLabel("")
-        self.lbl_pending.setStyleSheet("color: #B45309;")   # 琥珀色：提示"还在渲"
+        theme.mark(self.lbl_pending, "warn")   # 琥珀色：提示"还在渲"
         self.lbl_pending.setToolTip(
             "预览档先画首图让你尽快看到结果，其余图件在后台继续渲染；\n"
             "渲染完成的图会立刻出现在这个下拉里。")
@@ -162,7 +140,7 @@ class CanvasPanel(QWidget):
         self.canvas = MplCanvas(self, width=8.5, height=5.5)
         self.toolbar = NavigationToolbar2QT(self.canvas, self)
         hint = QLabel("提示：双击画布可放大；工具栏支持缩放/平移/另存")
-        hint.setStyleSheet("color: gray;")
+        theme.mark(hint, "subtle")
         self.canvas.mpl_connect("button_press_event", self._on_dclick)
 
         lay = QVBoxLayout(self)
@@ -604,6 +582,7 @@ def _show_image(self: MplCanvas, path: Path | str) -> None:
     """把 PNG 回显到画布（清除坐标轴，保持原始宽高比）。"""
     p = Path(path)
     self.fig.clear()
+    self.fig.set_facecolor("white")
     self.ax = self.fig.add_subplot(111)
     try:
         if p.suffix.lower() == ".png":
@@ -624,6 +603,7 @@ def _show_image(self: MplCanvas, path: Path | str) -> None:
 def _show_figure(self: MplCanvas, fig: Figure) -> None:
     """把外部 Figure 的坐标轴内容搬到本画布。"""
     self.fig.clear()
+    self.fig.set_facecolor("white")
     src = fig.axes[0] if fig.axes else None
     self.ax = self.fig.add_subplot(111)
     if src is not None:

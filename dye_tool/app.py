@@ -123,6 +123,14 @@ def run_headless(argv: list[str]) -> int | None:
 
 
 # ═══════════════════════════ 冻结产物 GUI 冒烟（P3 的验证门） ═══════════════════════════
+
+def _smoke_tmp_root() -> Path:
+    """门自检的临时根目录：程序目录下的 ``.preview_tmp``（可用 ``DYE_TOOL_PREVIEW_ROOT``
+    改到别处），不用系统临时目录——维护者要求不往系统盘写临时文件。"""
+    root = Path(os.environ.get("DYE_TOOL_PREVIEW_ROOT") or (app_root() / ".preview_tmp"))
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
 def _gui_smoke(argv: list[str]) -> int:
     """离屏构建主窗口并跑一条精简流水线，用于**验证打包产物里 Qt/matplotlib 模块齐备**。
 
@@ -176,7 +184,7 @@ def _gui_smoke(argv: list[str]) -> int:
 
     def _window():
         from core.config import default_config
-        from ui.main_window import MainWindow
+        from ui.window.main_window import MainWindow
         w = MainWindow(default_config())
         w.show()
         for _ in range(10):
@@ -239,7 +247,7 @@ def _gui_smoke(argv: list[str]) -> int:
         svg = ('<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32">'
                '<rect width="32" height="32" fill="#C81E1E"/></svg>')
         with tempfile.NamedTemporaryFile("w", suffix=".svg", delete=False,
-                                         encoding="utf-8") as fh:
+                                         encoding="utf-8", dir=str(_smoke_tmp_root())) as fh:
             fh.write(svg)
             path = fh.name
         try:
@@ -263,8 +271,9 @@ def _gui_smoke(argv: list[str]) -> int:
     # ── L3（评审记录）：门的产物必须落在**临时目录**，不能污染交付目录 ──
     # 原先 out_root = exe 同级 runs_gui_smoke：每跑一次门就在交付目录里新建一个
     # 完整 run（results.csv + xlsx + 8 张 png），反复跑持续膨胀。
+    # 临时目录用程序目录下的 .preview_tmp（不写系统盘 %TEMP%，结束即删）。
     import tempfile
-    smoke_dir = Path(tempfile.mkdtemp(prefix="dye_gui_smoke_"))
+    smoke_dir = Path(tempfile.mkdtemp(prefix="dye_gui_smoke_", dir=str(_smoke_tmp_root())))
 
     def _pipeline():
         from core.config import default_config
@@ -303,7 +312,7 @@ def _gui_smoke(argv: list[str]) -> int:
         assert n > 0, "批次工作区没有载入任何文件"
         assert w.goto("analysis"), "导航到 ② 分析 失败"
         assert w.analysis_page.current_key() == "phi", "分析页默认任务应为 Φ_Δ"
-        badge = w.nav.list.item(1).text()
+        badge = w.nav.badge("data")
         assert str(n) in badge, f"导航徽标没更新：{badge!r}"
         return f"{n} 个文件 / 徽标 {badge!r}"
     step("任务流壳（批次载入 + 导航 + 徽标）", _batch_flow)
@@ -355,7 +364,7 @@ def _write_smoke(lines: list[str], ok: bool, argv: list[str]) -> int:
 def _install_excepthook(app=None) -> None:
     """任何未捕获异常弹窗显示 traceback + 复制按钮（设计文档 §7）。"""
     from PySide6.QtWidgets import QMessageBox
-    from ui.pages.base_page import ErrorDialog
+    from ui.pages.base import ErrorDialog
 
     def hook(exc_type, exc, tb):
         if issubclass(exc_type, KeyboardInterrupt):
@@ -440,7 +449,7 @@ def main(argv=None) -> int:
         except Exception as err:                      # noqa: BLE001
             log.warning("首次写出默认配置失败: %s", err)
 
-    from ui.main_window import MainWindow
+    from ui.window.main_window import MainWindow
     win = MainWindow(cfg)
     win.show()
     log.info("dye_tool v%s 界面已启动 (frozen=%s)", VERSION,

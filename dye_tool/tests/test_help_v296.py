@@ -53,10 +53,32 @@ def test_enabled_hover_uses_static_help(qt_app, monkeypatch):
     parent.deleteLater()
 
 
+def test_parent_enter_skips_hidden_target(qt_app, monkeypatch):
+    """父级代收的 Enter：被藏起来的控件不弹说明（它的几何还是默认值，会"覆盖"光标）。"""
+    from ui.help_texts import bind_disabled_reason
+    shown = []
+    monkeypatch.setattr("ui.help_texts.QToolTip.showText",
+                        lambda pos, text, *a, **k: shown.append(text))
+    monkeypatch.setattr("ui.help_texts.QCursor.pos",
+                        lambda: btn.mapToGlobal(btn.rect().center()))
+    parent = QWidget()
+    btn = QPushButton("下一步", parent)
+    btn.setToolTip("去下一步")
+    flt = bind_disabled_reason(btn, lambda: "", parent)
+    flt.eventFilter(parent, QEvent(QEvent.Enter))
+    _pump(qt_app, 2)
+    assert shown == ["去下一步"]
+    btn.hide()
+    flt.eventFilter(parent, QEvent(QEvent.Enter))
+    _pump(qt_app, 2)
+    assert shown == ["去下一步"]
+    parent.deleteLater()
+
+
 def test_extinction_reason_state_machine(qt_app, tmp_path):
     from core.config import default_config
     from ui.help_texts import resolve_help
-    from ui.shell.cards.extinction import ExtinctionPanel
+    from ui.pages.tasks.extinction import ExtinctionPanel
     p = ExtinctionPanel(default_config())
     try:
         btn = p.btn_run

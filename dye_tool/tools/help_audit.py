@@ -19,7 +19,7 @@ def main() -> int:
     app = QApplication.instance() or QApplication([])
     from core.config import default_config
     from ui.help_texts import BANNED_HELP, _is_internal, audit_help
-    from ui.main_window import MainWindow
+    from ui.window.main_window import MainWindow
     cfg = default_config()
     cfg.setdefault("gui", {}).update({"show_welcome": False, "recent_dirs": [],
                                       "out_root": str(ROOT / "test_temp" / "help_audit_runs")})

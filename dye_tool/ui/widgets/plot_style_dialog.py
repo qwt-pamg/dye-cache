@@ -37,6 +37,7 @@ from PySide6.QtWidgets import (QCheckBox, QDialog, QDialogButtonBox,
 from core.plotstyle import (JACS_SCHEMA, ConfigIssue, delete_user_preset,
                             jacs_defaults, list_presets, load_preset,
                             save_user_preset, validate_jacs)
+from ui import theme
 
 log = logging.getLogger("dye_tool.ui.plot_style_dialog")
 
@@ -58,9 +59,6 @@ except Exception as _err:                                  # noqa: BLE001
 _PREVIEW_MAX_W = 3.4
 _PREVIEW_MAX_H = 2.9
 _PREVIEW_DPI = 100
-
-#: 文本框解析失败时的红框提示
-_BAD_STYLE = "border: 1px solid #c00000; background: #fff5f5;"
 
 #: 标签页顺序（设计文档 FR-7.3）；schema 里新出现但未列出的分组追加在末尾
 _GROUP_ORDER = ("版式与导出", "轴与框", "曲线与配色", "标注与趋势箭头",
@@ -255,7 +253,7 @@ def _row_label(spec: dict) -> str:
     short = _short_help(str(spec.get("help") or ""))
     if short:
         return (f"<b>{label}</b><br>"
-                f"<span style='color:#666666'>{html.escape(short)}</span>")
+                f"<span style='color:{theme.hexc('text_muted')}'>{html.escape(short)}</span>")
     return f"<b>{label}</b>"
 
 
@@ -351,7 +349,7 @@ class PlotStyleDialog(QDialog):
         """搭界面：左标签页 + 右样板图 + 底部校验区/按钮排。"""
         # 先建状态标签：编辑器的改动回调会写它们
         self.lbl_status = QLabel("就绪")
-        self.lbl_status.setStyleSheet("color: #555555;")
+        theme.mark(self.lbl_status, "muted")
         self.lbl_preset = QLabel("预设：未选择")
         self.lbl_preset.setToolTip("最近套用的预设名；手动改动后标记为「已改动」")
 
@@ -556,12 +554,12 @@ class PlotStyleDialog(QDialog):
         panel.setMinimumWidth(380)
         lay = QVBoxLayout(panel)
         head = QLabel("样板图预览（示意数据，非真实测量）")
-        head.setStyleSheet("font-weight: bold;")
+        theme.mark(head, "strong")
         lay.addWidget(head)
         if Figure is None or FigureCanvasQTAgg is None:     # 预览不可用，但不影响编辑
             hint = QLabel(_MPL_ERROR or "matplotlib 不可用，预览已禁用。")
             hint.setWordWrap(True)
-            hint.setStyleSheet("color: #b26a00;")
+            theme.mark(hint, "warn")
             lay.addWidget(hint)
         else:
             self._fig = Figure(figsize=(_PREVIEW_MAX_W, _PREVIEW_MAX_H),
@@ -577,7 +575,7 @@ class PlotStyleDialog(QDialog):
         note = QLabel("预览只体现主要键（画布尺寸/字号/线宽/框/刻度方向/色带/标注/箭头），"
                       "其余键请以导出结果为准。")
         note.setWordWrap(True)
-        note.setStyleSheet("color: #777777;")
+        theme.mark(note, "muted")
         lay.addWidget(note)
         lay.addStretch(1)
         return panel
@@ -622,7 +620,7 @@ class PlotStyleDialog(QDialog):
         elif isinstance(widget, QDoubleSpinBox):
             widget.setValue(float(val))
         elif isinstance(widget, QLineEdit):
-            widget.setStyleSheet("")
+            theme.set_state(widget, "invalid", False)
             widget.setText(_format_value(spec, val))
         else:
             raise TypeError(f"未知控件 {type(widget).__name__}")
@@ -689,7 +687,7 @@ class PlotStyleDialog(QDialog):
         widget = self._editors.get(key)
         if isinstance(widget, QLineEdit):
             ok, val, msg = _parse_text(spec, widget.text())
-            widget.setStyleSheet("" if ok else _BAD_STYLE)
+            theme.set_state(widget, "invalid", not ok)
             if ok:
                 self._last_values[key] = val
             else:
@@ -721,13 +719,13 @@ class PlotStyleDialog(QDialog):
         self.txt_issues.clear()
         if not issues:
             self.txt_issues.appendHtml(
-                "<span style='color:#1a7f37'>✔ 未发现问题，可以放心「确定」。</span>")
+                f"<span style='color:{theme.hexc('success')}'>✔ 未发现问题，可以放心「确定」。</span>")
             self._set_status("校验通过：0 个问题")
             return
         n_err = sum(1 for i in issues if i.level == "ERROR")
         for it in issues:
             is_err = str(it.level).upper() == "ERROR"
-            color = "#c00000" if is_err else "#b26a00"
+            color = theme.hexc("danger" if is_err else "warn")
             tag = "错误" if is_err else "警告"
             text = f"【{tag}】{it.key}：{it.message}"
             if it.suggestion:

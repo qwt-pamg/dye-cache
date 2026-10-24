@@ -29,8 +29,9 @@ pytestmark = pytest.mark.slow
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 #: A42.6 零新配置键：GUI 会话态基线键集
+#: theme 是前端重构（浅色/深色主题）有意新增的界面键，不属于 G 道
 GUI_BASELINE_KEYS = {"recent_dirs", "max_recent", "out_root", "show_welcome",
-                     "lazy_preview", "window", "nav"}
+                     "lazy_preview", "window", "nav", "theme"}
 
 #: FR-44 表征总表 14 列（设计文档 §5.7 原序）
 FR44_COLUMNS = ["条件/溶剂", "化合物/组别", "吸收谱文件", "发射谱文件",

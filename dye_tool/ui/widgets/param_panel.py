@@ -215,7 +215,7 @@ class ParamPanel(QWidget):
         self.cmb_preset.setToolTip(
             "一键套用一组出图参数（尺寸/dpi/字号/线宽…）。\n"
             "选择后仍可手工微调；一改就自动跳到「自定义」。\n"
-            "预设**不会**改动探针波长、拟合范围等数值参数。")
+            "预设不会改动探针波长、拟合范围等数值参数。")
         self.btn_style_adv = QPushButton("高级…")
         self.btn_style_adv.setToolTip(
             "打开高级出图参数：附录 B 全部键位（标注摆位、箭头、配色、逐图高度…），\n"
@@ -420,7 +420,6 @@ class ParamPanel(QWidget):
                 self._modified_hits += 1
             if bool(w.property(self.MODIFIED_PROP)) != modified:
                 w.setProperty(self.MODIFIED_PROP, modified)
-                w.setStyleSheet("background-color: #FFF7E0;" if modified else "")
                 try:
                     w.style().unpolish(w)
                     w.style().polish(w)

@@ -163,7 +163,7 @@ def test_file_table_no_suffix_hint_and_unit(qt_app, tmp_path):
 
 
 def test_data_page_save_then_reload_restores_time(qt_app, tmp_path):
-    from ui.shell.data_page import DataPage
+    from ui.pages.data import DataPage
     _write_two_col(tmp_path / "sample-30.txt")
     cfg = default_config()
     clear_scan_cache()
@@ -216,7 +216,7 @@ def test_batch_without_phi_ref_falls_back_to_none(tmp_path):
 
 # ═══════════════ V2.9.1 FR-62/63：对比页 UI 初值/记忆 ═══════════════
 def test_compare_page_phi_ref_default_and_controls(qt_app):
-    from ui.pages.compare_page import ComparePage
+    from ui.pages.compare import ComparePage
     page = ComparePage(default_config())
     try:
         assert page.sp_phi_ref.value() == pytest.approx(0.75)
@@ -227,7 +227,7 @@ def test_compare_page_phi_ref_default_and_controls(qt_app):
 
 
 def test_compare_page_remember_writes_batch(qt_app, tmp_path):
-    from ui.pages.compare_page import ComparePage
+    from ui.pages.compare import ComparePage
     page = ComparePage(default_config())
     try:
         page.data_dir = tmp_path
@@ -246,7 +246,7 @@ def test_compare_page_remember_writes_batch(qt_app, tmp_path):
 
 # ═══════════ V2.9.1 O 修复：跨视图同步 / 清除参比 / PhiPage 记忆 ═══════════
 def test_data_page_file_time_change_refreshes_panel(qt_app, tmp_path):
-    from ui.shell.data_page import DataPage
+    from ui.pages.data import DataPage
     from ui.widgets.dye_time_panel import T_EFF as PANEL_EFF
     s = _scan(tmp_path, "sample-30.txt", t=30.0)
     page = DataPage(default_config())
@@ -276,7 +276,7 @@ def test_from_scans_clears_base_reference_group(tmp_path):
 
 
 def test_phi_page_remember_reference_and_phi_ref(qt_app, tmp_path):
-    from ui.pages.phi_page import PhiPage
+    from ui.pages.phi import PhiPage
     page = PhiPage(default_config())
     try:
         page.data_dir = tmp_path
@@ -291,7 +291,7 @@ def test_phi_page_remember_reference_and_phi_ref(qt_app, tmp_path):
 
 
 def test_data_page_applies_batch_time_and_dup(qt_app, tmp_path):
-    from ui.shell.data_page import DataPage
+    from ui.pages.data import DataPage
     s = _scan(tmp_path, "sample-30.txt", t=30.0)
     batch = empty_batch(tmp_path)
     batch.set_entry("sample-30.txt", t_override=300.0, dup_index="7")

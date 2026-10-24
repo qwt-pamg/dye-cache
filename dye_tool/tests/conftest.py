@@ -307,15 +307,22 @@ _DATA_REQUIRED_MODULES = {
     "test_regression_legacy", "test_results", "test_spectra",
     "test_ui_smoke_personal",
 }
+# 只依赖 samples/uvvis 的界面/分组用例：有合成样例（tools/make_ui_samples.py）就跑
+_SAMPLES_ONLY_MODULES = {
+    "test_grouping", "test_live_preview_e2e", "test_ui_smoke_personal",
+}
 
 
 def pytest_collection_modifyitems(config, items):
     data_dir = Path(__file__).resolve().parent / "data"
     if data_dir.is_dir():
         return
+    skipped = set(_DATA_REQUIRED_MODULES)
+    if any(SAMPLES_UVVIS.glob("*.txt")):
+        skipped -= _SAMPLES_ONLY_MODULES
     skip = pytest.mark.skip(reason="public repository excludes experimental test datasets")
     for item in items:
         module = getattr(item, "module", None)
         name = module.__name__.split(".")[-1] if module is not None else ""
-        if name in _DATA_REQUIRED_MODULES:
+        if name in skipped:
             item.add_marker(skip)
