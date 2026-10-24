@@ -192,3 +192,58 @@ def test_theme_apply_and_roles(qt_app):
     # 两套色板令牌一致，否则切主题会 KeyError
     assert set(theme.PALETTES["light"]) == set(theme.PALETTES["dark"])
     assert "[role=\"hint\"]" in theme.stylesheet("light")
+
+
+# ═══════════════════════ 光物理表征卡（拆成三个子页后） ═══════════════════════
+def test_photophysics_bleach_csv_flows_into_char_table(qt_app, tmp_path):
+    import math
+    from core.config import default_config
+    from ui.pages.tasks.photophysics import PhotophysicsPanel
+    p = PhotophysicsPanel(default_config())
+    try:
+        assert [p.tabs.tabText(i) for i in range(p.tabs.count())] == ["量子产率 φ", "光漂白", "表征总表"]
+        p.set_default_dir(tmp_path)
+        assert p.tab_phi.lbl_phi_dir.text() == str(tmp_path)
+        assert p.tab_bleach.lbl_bleach_dir.text() == str(tmp_path)
+
+        csv = tmp_path / "roi.csv"
+        k = 0.05                                     # min⁻¹
+        csv.write_text("time,intensity\n" + "".join(
+            f"{t},{0.2 + 0.8 * math.exp(-k * t):.6f}\n" for t in range(0, 61, 3)), encoding="utf-8")
+        bleach = p.tab_bleach
+        assert bleach.load_bleach_csv(csv)
+        res = bleach.compute_bleach()
+        assert res.get("ok"), res
+        assert bleach.add_bleach_to_table()
+        assert p.tabs.currentWidget() is p.tab_char        # 入表后切到总表
+        rows = p.rows()
+        assert len(rows) == 1 and rows[0]["k_photo"] == pytest.approx(k, rel=0.05)
+
+        out = p.tab_char.export_csv(tmp_path / "char.csv")
+        assert out and (tmp_path / "char.csv").is_file()
+    finally:
+        p.deleteLater()
+
+
+def test_photophysics_add_without_result_does_not_touch_table(qt_app):
+    from core.config import default_config
+    from ui.pages.tasks.photophysics import PhotophysicsPanel
+    p = PhotophysicsPanel(default_config())
+    try:
+        assert p.tab_phi.add_phi_to_table() is False
+        assert p.tab_bleach.add_bleach_to_table() is False
+        assert p.rows() == [] and p.tab_char.export_csv() is None
+    finally:
+        p.deleteLater()
+
+
+def test_workbench_pages_share_one_implementation():
+    from ui.pages.spectra import SpectraPage
+    from ui.pages.stack import StackPage
+    from ui.pages.workbench import WorkbenchPage
+    assert (StackPage.PRESET_SECTION, StackPage.PAGE_MARK) == ("stack", "③")
+    assert (SpectraPage.PRESET_SECTION, SpectraPage.PAGE_MARK) == ("spectra", "④")
+    for name in ("_export_working_view", "_apply_preset_to_working", "_on_display_preset_chosen",
+                 "_save_display_preset_dialog", "_init_layout_sizes", "_on_advanced_style"):
+        assert name not in vars(StackPage) and name not in vars(SpectraPage), name
+        assert getattr(StackPage, name) is getattr(WorkbenchPage, name)
