@@ -79,13 +79,15 @@ def test_mainwindow_audit_and_1024_phi_layout(qt_app, tmp_path):
         assert p.width() < 1000
         body = p._body
         vis = [body.widget(i) for i in range(body.count()) if body.widget(i).isVisible()]
-        assert len(vis) == 2 and not p.settings_panel.isVisible()
+        # 窄页：批次树收起，结论/图件 + 检查器两栏，互不重叠
+        assert len(vis) == 2 and not p._tree_col.isVisible()
+        assert p.btn_tree_toggle.isVisible()
         assert not any(vis[a].geometry().intersects(vis[b].geometry())
                        for a in range(len(vis)) for b in range(a + 1, len(vis)))
-        p.btn_settings_toggle.setChecked(True)
+        p.btn_tree_toggle.setChecked(True)
         _pump(qt_app, 60)
         vis = [body.widget(i) for i in range(body.count()) if body.widget(i).isVisible()]
-        assert p.settings_panel.isVisible()
+        assert p._tree_col.isVisible() and len(vis) == 3
         assert not any(vis[a].geometry().intersects(vis[b].geometry())
                        for a in range(len(vis)) for b in range(a + 1, len(vis)))
         win.grab().save(str(tmp_path / "analysis_1024_fixed.png"))

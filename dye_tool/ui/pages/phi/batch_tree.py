@@ -22,7 +22,6 @@ from PySide6.QtWidgets import (QAbstractItemView, QHeaderView, QTreeWidget,
 from ui import theme
 from ui.widgets.time_units import format_time_value
 
-from .group_tabs import ALL_GROUPS_TITLE
 
 #: 除"首个样品组"（accent）与参比组（series_ref）之外的组按序轮换这几色；
 #: 都取中等明度，浅色白底与深色底上都读得清，且避开 accent 的青绿与参比的橙
@@ -36,6 +35,9 @@ STATUS_TOKEN = {
 }
 #: QC 原因原文在状态列里最多显示这么多字，全文放在悬浮提示里
 QC_TEXT_MAX = 8
+
+
+ALL_GROUPS_TITLE = "全部组（对比）"
 
 _KIND, _GROUP, _PATH, _TOKENS = (Qt.UserRole, Qt.UserRole + 1, Qt.UserRole + 2,
                                  Qt.UserRole + 3)
@@ -426,3 +428,29 @@ class BatchTree(QTreeWidget):
     def _on_double_clicked(self, item: QTreeWidgetItem, _col: int) -> None:
         if item.data(0, _KIND) == KIND_FILE:
             self.file_activated.emit(Path(item.data(0, _PATH)).name)
+
+
+def figure_names(groups: set, scans: list) -> set:
+    """这些组对应的图件名集合（命名与 ``plotting_jacs`` 同源，防漂移）。
+
+    A03（V2.x 审查）："单组"只数**可出图的样品组**（不含已剔除/background/dark），
+    与图 a 的命名口径一致；否则"1 样品组 + 1 背景组"时图 a 哪个页签都看不见。
+    """
+    try:
+        from ui.prep.names import fig_a_names, stack_tag
+        from core.render.plotting import _safe
+    except Exception:                                  # noqa: BLE001
+        return set()
+    draw_groups = sorted({str(s.group) for s in (scans or [])
+                          if not s.excluded
+                          and str(getattr(s, "role", "")) not in ("background", "dark")})
+    single = len(draw_groups) <= 1
+    names: set = set()
+    for g in groups:
+        if single:
+            names.update(fig_a_names([g]))
+        else:
+            names.add(f"fig_a_spectra_{_safe(g)}")
+        names.add(f"fig_b_kinetics_{_safe(g)}")
+        names.add(f"jacs_stack_{stack_tag(g)}")
+    return names

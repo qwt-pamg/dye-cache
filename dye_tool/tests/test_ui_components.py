@@ -64,38 +64,9 @@ def test_stale_banner_numeric_change_requires_rerun_and_ignores_export_and_gui(q
     assert not b.is_shown() and b.kind() == ""
 
 
-# ═══════════════════════ GroupTabs ═══════════════════════
-def test_group_tabs_hidden_until_enabled_with_two_groups(qt_app):
-    from ui.pages.phi.group_tabs import GroupTabs
-    t = GroupTabs()
-    got = []
-    t.groups_selected.connect(got.append)
-    t.rebuild(["a", "b"], str)
-    assert t.isHidden() and got == [None]         # 能力未开：隐藏并清过滤
-    t.set_feature_enabled(True)
-    t.rebuild(["a"], str)
-    assert t.isHidden()                           # 单组不显示
-    t.rebuild(["a", "b"], lambda g: f"Dye · {g}")
-    assert t.labels() == ["全部组（对比）", "Dye · a", "Dye · b"]
-    assert got[-1] is None                        # 默认落在「全部组」
-
-
-def test_group_tabs_keep_selection_by_group_not_index(qt_app):
-    from ui.pages.phi.group_tabs import GroupTabs
-    t = GroupTabs()
-    t.set_feature_enabled(True)
-    t.rebuild(["b", "c"], str)
-    assert t.select_group("c")
-    got = []
-    t.groups_selected.connect(got.append)
-    t.rebuild(["a", "b", "c"], str)               # 组集合变了，下标会漂
-    assert t.tabText(t.currentIndex()) == "c" and got[-1] == {"c"}
-    t.set_feature_enabled(False)
-    assert t.isHidden() and got[-1] is None and not t.select_group("c")
-
-
+# ═══════════════════════ figure_names ═══════════════════════
 def test_figure_names_single_vs_multi_draw_groups():
-    from ui.pages.phi.group_tabs import figure_names
+    from ui.pages.phi.batch_tree import figure_names
     s = lambda g, role="sample": SimpleNamespace(group=g, role=role, excluded="")  # noqa: E731
     multi = figure_names({"g1"}, [s("g1"), s("g2")])
     assert any(n.startswith("fig_a_spectra_") for n in multi)

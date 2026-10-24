@@ -145,6 +145,14 @@ def test_one_analysis_closed_loop(qt_app, tmp_path, monkeypatch):
         assert phi.actions.btn_next_step.isEnabled() and not phi.actions.isHidden()
         assert phi.actions.btn_copy_result.isEnabled()
         assert all(g in phi._last_result_text for g in rr.results)
+        # 流程条：分析后前三步完成、自动停在 Φ_Δ；结论卡有内容；「下一步」切到出图导出
+        assert [phi.flow_bar.state(i) for i in range(3)] == ["done"] * 3
+        assert phi.flow_bar.current() == 3 and phi.inspector_stack.currentIndex() == 3
+        assert phi.verdict.mode() == "verdict" and phi.verdict.value_text()
+        phi.actions.btn_next_step.click()
+        assert phi.flow_bar.current() == 4 and phi.center_stack.currentIndex() == 1
+        # 顶部流程条挂在分析页的细条里（不在 Φ_Δ 页自己的布局里）
+        assert phi.top_bar.parent() is not phi
 
 
 def test_export_and_preset_roundtrip(tmp_path):

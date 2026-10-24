@@ -13,13 +13,13 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox,
-                               QComboBox, QDoubleSpinBox, QGroupBox, QHBoxLayout,
-                               QHeaderView, QLabel, QPushButton, QScrollArea,
-                               QSplitter, QTableWidget, QTableWidgetItem,
-                               QTabWidget, QVBoxLayout, QWidget)
+                               QComboBox, QDoubleSpinBox, QFormLayout, QFrame,
+                               QGroupBox, QHBoxLayout, QHeaderView, QLabel,
+                               QPushButton, QScrollArea, QSplitter, QStackedWidget,
+                               QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
 
 from core.io import collect_scans
 from core.pipeline import rerender_figures, run_directory
@@ -31,34 +31,57 @@ from ui.widgets.mpl_canvas import CanvasPanel
 from ui.widgets.param_panel import ParamPanel
 from ui.widgets.result_actions import ResultActions
 from .backfill import FigureBackfill
-from .group_tabs import GroupTabs, figure_names
+from .batch_tree import BatchTree, figure_names
+from .flow_bar import STEP_DONE, STEP_STALE, STEP_TODO, FlowBar
 from .settings_panel import UnifiedSettingsPanel
 from .stale import StaleBanner
+from .verdict import VerdictCard
 from ui import theme
 
 log = logging.getLogger("dye_tool.ui.phi")
+
+
+@theme.register_qss
+def _qss(p: dict) -> str:
+    """检查器底部「其余步摘要」：像链接行，不像按钮。"""
+    return f"""
+QFrame#phiInspector {{ background: {p['surface']}; border: 1px solid {p['border']};
+                      border-radius: 8px; }}
+QPushButton#phiStepSummary {{ text-align: left; border: none; border-top: 1px solid {p['border']};
+                             border-radius: 0; background: transparent; padding: 6px 2px;
+                             color: {p['text_muted']}; }}
+QPushButton#phiStepSummary:hover {{ color: {p['accent']}; }}
+"""
 
 RESULT_HEADERS = ["组别", "角色", "k ± σk (s⁻¹)", "R²", "n", "A(0)",
                   "Φ_Δ ± σ", "状态 / 备注"]
 
 
-#: 页面宽度低于它时，三栏改为二栏（右侧出图设置与左侧参数共用一栏，按钮切换）
+#: 流程条的五步；检查器第 i 页、:meth:`PhiPage._step_summary` 都按这个顺序
+STEPS = ("导入", "分组与 QC", "拟合 k_obs", "Φ_Δ", "出图导出")
+STEP_HINTS = (
+    "选数据目录；文件清单里可以勾掉不要的谱",
+    "给每组起染料名、修正识别错的时间；只影响本次分析",
+    "改了这里的参数需要重新分析（F5）",
+    "这里改的只重算 Φ_Δ，不会重新拟合 k_obs",
+    "图式与导出格式；定稿出图生成 600 dpi 的投稿图",
+)
+
+#: 页面宽度低于它时批次树默认收起（顶部「批次」按钮可展开）
 NARROW_PAGE_W = 1180
 
 
 class PhiPage(PageBase):
-    """Φ_Δ 全流程页。
+    """Φ_Δ 全流程页：流程条 + 批次树 / 结论卡与图件 / 分步检查器。
 
-    V1.1 增量：左侧多一个「预分析整定」页签（染料命名 + 时间工作表，FR-11.5/FR-12），
-    「开始分析」默认只出**预览档**（FR-6.1），另有「定稿出图」按钮产出投稿图件。
+    流程条只决定"现在看哪一步"，不强制顺序：检查器换成该步能改的参数，中栏在
+    导入/分组两步显示文件清单，其余步显示图件。「开始分析」默认只出**预览档**
+    （FR-6.1），「定稿出图」产出投稿图件。
     """
 
     TITLE = "① 单线态氧（k_obs → Φ_Δ）"
     SUBTITLE = ("选择数据 → 逐组拟合 k_obs → 指定参比与 Φ_ref → 得到 Φ_Δ 与图件。"
                 "改参比只重算 Φ_Δ，不会重新拟合 k_obs。")
-
-    #: V2.6 FR-40.5：结果区「下一步」→ ③ 图件 / 定稿出图
-    next_step_requested = Signal(str)
 
     def __init__(self, cfg: Optional[dict] = None, parent: Optional[QWidget] = None):
         super().__init__(cfg, parent)
@@ -87,69 +110,54 @@ class PhiPage(PageBase):
 
     # ══════════════ 构建 ══════════════
     def _build(self) -> None:
-        toolbar = self._build_toolbar()
-        left_tabs = self._build_params_column()
-        right = self._build_work_column()
+        """混搭布局：流程条 / 左批次树 · 中结论卡+画布+结果 · 右检查器。"""
+        self._build_controls()
+        self._build_top_bar()
+        left = self._build_tree_column()
+        center = self._build_center_column()
         self._build_settings_column()
-        body = self._build_body(left_tabs, right)
-        # ── 底：进度 + 导出 ──
-        self.export = ExportBar(on_workbook=self._export_workbook,
-                                on_dashboard=self._export_dashboard)
-        # V2.3 FR-24.2/24.6：导出条的常规反馈走状态栏（不弹模态）。
-        # A15（V2.x 审查）：`canvas.status_message` 已在创建画布处连接过一次，
-        # 这里**再连一次**会让每条画布消息在状态栏出现两遍（与 F2 同类）。
-        self.export.message.connect(self.status)
-        # V2.6 FR-40.5：结果区动作条（打开输出 / 复制结果 / 下一步 / 重试）
-        self.actions = ResultActions(
-            self, next_target="plot",
-            next_text="下一步：③ 图件预览 / 定稿出图")
-        self.actions.message.connect(self.status)
-        self.actions.next_step_requested.connect(self.next_step_requested.emit)
-        self.actions.retry_requested.connect(self._run)
+        inspector = self._build_inspector()
+        body = self._build_body(left, center, inspector)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
-        lay.addWidget(self.header())
+        lay.setSpacing(6)
         self.setToolTip("可把数据目录 / 光谱文件直接拖到这里")
-        for row in toolbar:
-            lay.addLayout(row)
+        lay.addWidget(self.top_bar)
         # A25.1（V2.3 §12）：结果过期横幅（参数改了但结果没重算时出现，非模态）
         self.banner = StaleBanner()
         self.banner.action_requested.connect(self._on_banner_action)
         lay.addWidget(self.banner)
         lay.addWidget(body, 1)
         lay.addWidget(self.progress_row())
-        lay.addWidget(self.actions)
-        lay.addWidget(self.export)
 
-        # A25.2（V2.3 §12）：结果表 / 组页签右键菜单；文件表与画布的右键由各自组件实现
+        # A25.2（V2.3 §12）：结果表 / 批次树右键菜单；文件表与画布的右键由各自组件实现
         self.table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self._on_result_context_menu)
-        self.group_tabs.setContextMenuPolicy(Qt.CustomContextMenu)
-        self.group_tabs.customContextMenuRequested.connect(
-            self._on_group_tab_context_menu)
+        self.tree.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.tree.customContextMenuRequested.connect(self._on_tree_context_menu)
         self.files.status_message.connect(self.status)
         # 勾选状态来自配置（gui.lazy_preview），改动即持久化到 config.yaml
         self.chk_lazy.blockSignals(True)
         self.chk_lazy.setChecked(self._lazy_enabled())
         self.chk_lazy.blockSignals(False)
+        self._go_step(0)
+        self._update_flow()
 
-    def _build_toolbar(self) -> list:
-        """顶部三行：目录 / 参比与 Φ_ref / 预览开关与主按钮。"""
+    def _build_controls(self) -> None:
+        """检查器各步用到的按钮与输入（目录 / 参比与 Φ_ref / 预览开关 / 主按钮）。"""
         self.btn_dir = QPushButton("选择数据目录…")
         self.btn_reload = QPushButton("重新载入")
+        self.btn_reload.setToolTip("清空解析缓存后重新读取当前目录（Ctrl+R）")
         self.btn_run = QPushButton("▶ 开始分析")
         theme.mark(self.btn_run, "primary")
-        self.btn_run.setToolTip("跑完整流水线并出预览图（低分辨率、秒级完成）")
         self.btn_final = QPushButton("定稿出图")
+        theme.mark(self.btn_final, "primary")
         self.btn_final.setToolTip(
             "用刚才的数据直接重渲 600 dpi 的 png 到 figures/（不再重新读文件）\n"
             "产物与「直接全量跑」完全一致，是投稿用的那一份。")
         self.btn_final.setEnabled(False)
         # V2.9.1 FR-61：显式参比组（默认自动按 ref- 前缀/角色识别；UI 指定优先）
         self.cmb_reference = QComboBox()
-        self.cmb_reference.setMaximumWidth(230)
-        self.cmb_reference.setToolTip(
-            "自动识别（默认）沿用 ref- 前缀/角色；也可显式指定任一组为参比。")
         self.cmb_reference.currentIndexChanged.connect(self._on_reference_changed)
         self._reference_group = ""
         # V2.9.1 O1：Φ_Δ 页自己的 Φ_ref（默认读 config，可记住到 dye_batch.yaml）
@@ -157,22 +165,25 @@ class PhiPage(PageBase):
         self.sp_phi_ref.setRange(0.0001, 10.0)
         self.sp_phi_ref.setDecimals(4)
         self.sp_phi_ref.setSingleStep(0.05)
-        self.sp_phi_ref.setMaximumWidth(90)
         self.sp_phi_ref.setValue(float((self.cfg.get('quantum_yield') or {}).get('phi_ref', 0.75)))
-        self.sp_phi_ref.setToolTip("参比样 Φ_Δ（Φ_ref）；随「记住参比」写入 dye_batch.yaml")
         self.btn_remember_ref = QPushButton("记住参比…")
-        self.btn_remember_ref.setMaximumWidth(100)
         self.btn_remember_ref.setToolTip("把显式参比组与 Φ_ref 写入本目录 dye_batch.yaml（显式动作）")
         self.btn_remember_ref.clicked.connect(self._remember_reference)
         self.sp_phi_ref.valueChanged.connect(self._recompute_phi_only)
         self.chk_lazy = QCheckBox("预览先出首图")
         self.chk_lazy.setToolTip(
-            "勾选（默认，P1 懒渲染）：预览档先只渲首批图件（默认图 a，谱图最直观），\n"
+            "勾选（默认）：预览先只渲首批图件（默认图 a，谱图最直观），\n"
             "让你尽快看到结果；其余图件在后台按顺序补渲，画完一张出现一张。\n"
-            "取消勾选：仍按老行为一次画完整批预览图（图件多时要多等几秒）。\n"
+            "取消勾选：一次画完整批预览图（图件多时要多等几秒）。\n"
             "两种方式的最终图件集合完全一样；「定稿出图」始终整批出 600 dpi。")
+        self.chk_live = QCheckBox("实时生图预览")
+        self.chk_live.setChecked(True)
+        self.chk_live.setToolTip("调整图式/标注/透明等生图参数时，用最终渲染器低 dpi 预览；不写正式产物")
+        self.lbl_live = QLabel("预览待命")
+        theme.mark(self.lbl_live, "hint")
         self.lbl_dir = QLabel("未选择目录")
         theme.mark(self.lbl_dir, "muted")
+        self.lbl_dir.setWordWrap(True)
         self.btn_dir.clicked.connect(self._choose_dir)
         self.btn_reload.clicked.connect(self._reload_dir)
         self.btn_run.clicked.connect(self._run)
@@ -183,64 +194,47 @@ class PhiPage(PageBase):
         self.chk_lazy.toggled.connect(self._on_lazy_toggled)
         self.btn_reload.setEnabled(False)
         self.btn_run.setEnabled(False)
-        # V2.9.4 M2 修复：顶部工具条拆两行（1024 宽不裁切）
-        top1 = QHBoxLayout()
-        top1.addWidget(self.btn_dir)
-        top1.addWidget(self.btn_reload)
-        top1.addWidget(self.lbl_dir, 1)
-        top2 = QHBoxLayout()
-        top2.addWidget(QLabel("参比"))
-        top2.addWidget(self.cmb_reference)
-        top2.addWidget(QLabel("Φ_ref"))
-        top2.addWidget(self.sp_phi_ref)
-        top2.addWidget(self.btn_remember_ref)
-        top3 = QHBoxLayout()
-        top3.addWidget(self.chk_lazy)
-        self.chk_live = QCheckBox("实时生图预览")
-        self.chk_live.setChecked(True)
-        self.chk_live.setToolTip("调整图式/标注/透明等生图参数时，用最终渲染器低 dpi 预览；不写正式产物")
-        self.lbl_live = QLabel("预览待命")
-        theme.mark(self.lbl_live, "hint")
-        top3.addWidget(self.chk_live)
-        top3.addWidget(self.lbl_live)
-        self.btn_settings_toggle = QPushButton("出图设置")
-        self.btn_settings_toggle.setCheckable(True)
-        self.btn_settings_toggle.setToolTip("窗口较窄时左栏只放一组：按下显示出图设置（图式/误差棒/导出格式），"
-                                            "再按一次回到分析参数。")
-        top3.addWidget(self.btn_settings_toggle)
-        top3.addStretch(1)
-        top3.addWidget(self.btn_final)
-        top3.addWidget(self.btn_run)
 
-        return [top1, top2, top3]
+    def _build_top_bar(self) -> None:
+        """流程条 + 批次树开关。分析页会把整条挂到它自己的顶部细条里。"""
+        self.flow_bar = FlowBar(STEPS)
+        self.flow_bar.step_clicked.connect(self._go_step)
+        self.btn_tree_toggle = QPushButton("批次")
+        self.btn_tree_toggle.setCheckable(True)
+        self.btn_tree_toggle.setToolTip("窗口较窄时批次树默认收起：按下显示，再按一次收起")
+        self.top_bar = QWidget()
+        self.top_bar.setObjectName("phiTopBar")
+        lay = QHBoxLayout(self.top_bar)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.addWidget(self.flow_bar, 1)
+        lay.addWidget(self.btn_tree_toggle)
 
-    def _build_params_column(self) -> QTabWidget:
-        """左栏：分析参数 + 预分析整定（染料命名 / 时间工作表）。"""
-        self.params = ParamPanel()
-        self.params.changed.connect(self._on_params_changed)
-        scroll_p = QScrollArea()
-        scroll_p.setWidget(self.params)
-        scroll_p.setWidgetResizable(True)
-        scroll_p.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+    def top_bar_widget(self) -> QWidget:
+        """分析页顶部细条插槽的约定：交出流程条（同一对象，切走时会还回来）。"""
+        return self.top_bar
 
-        self.dye_panel = DyeTimePanel()
-        self.dye_panel.dye_changed.connect(self._on_dye_changed)
-        self.dye_panel.remember_changed.connect(self._on_remember)
-        self.dye_panel.times_changed.connect(self._on_times_changed)
+    def _build_tree_column(self) -> QWidget:
+        """左栏：批次树（组 → 文件，只读导航，选组即过滤画布与文件表）。"""
+        self.tree = BatchTree()
+        self.tree.groups_selected.connect(self._apply_group_filter)
+        self.lbl_tree = QLabel("批次")
+        theme.mark(self.lbl_tree, "section")
+        col = QWidget()
+        col.setObjectName("phiTreeColumn")
+        lay = QVBoxLayout(col)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(4)
+        lay.addWidget(self.lbl_tree)
+        lay.addWidget(self.tree, 1)
+        col.setMinimumWidth(200)
+        col.setMaximumWidth(300)
+        return col
 
-        left_tabs = QTabWidget()
-        left_tabs.addTab(scroll_p, "分析参数")
-        left_tabs.addTab(self.dye_panel, "预分析整定")
-        left_tabs.setToolTip(
-            "「预分析整定」= 分析之前给数据组起染料名、修不正常的时间；\n"
-            "两个动作都只影响本次分析与 run 记录，不会改动原始文件。")
-        left_tabs.setMinimumWidth(320)
-        left_tabs.setMaximumWidth(380)
+    def _build_center_column(self) -> QWidget:
+        """中栏：结论卡 / 文件清单或图件 / 结果表（含动作条与导出条）。"""
+        self.verdict = VerdictCard()
+        self.verdict.set_empty("还没有结果", "选择数据目录，再按 F5 开始分析")
 
-        return left_tabs
-
-    def _build_work_column(self) -> QSplitter:
-        """中栏：组页签 + 文件清单 / 图件预览，下方结果表。"""
         self.files = FileTable()
         self.files.table.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         # V2.9.5R2：窄窗口下列头不被均匀挤压；文件名/剔除原因各占可伸缩列
@@ -257,6 +251,7 @@ class PhiPage(PageBase):
         # 整定面板，于是"表里改了、分析没变"。接到同一份状态（单向：表 → 面板）。
         self.files.dye_changed.connect(self._on_file_dye_changed)
         self.files.time_changed.connect(self._on_file_time_changed)
+        self.files.selection_changed.connect(lambda *_: self._refresh_tree())
         box_files = QGroupBox("文件清单")
         lb = QVBoxLayout(box_files)
         lb.addWidget(self.files)
@@ -264,12 +259,16 @@ class PhiPage(PageBase):
         self.canvas = CanvasPanel()
         # V2.3 FR-24.6：画布状态（复制成功等）→ 页面状态栏
         self.canvas.status_message.connect(self.status)
-        # V2.5 FR-32.5（吸收 FR-31.2）：位图画布显示"当前图信息"（源文件/组/档位，
-        # 元数据反查，零像素操作）。
+        # V2.5 FR-32.5：位图画布显示"当前图信息"（源文件/组/档位，元数据反查）
         self.canvas.figure_changed.connect(self._on_figure_info)
-        box_fig = QGroupBox("图件预览（图 a–e 与 JACS 堆叠图）")
+        box_fig = QGroupBox("图件（图 a–e 与 JACS 堆叠图）")
         lf = QVBoxLayout(box_fig)
         lf.addWidget(self.canvas)
+
+        # 文件清单与图件共用中栏主区：导入/分组两步看清单，其余步看图
+        self.center_stack = QStackedWidget()
+        self.center_stack.addWidget(box_files)
+        self.center_stack.addWidget(box_fig)
 
         self.table = QTableWidget(0, len(RESULT_HEADERS))
         self.table.setHorizontalHeaderLabels(RESULT_HEADERS)
@@ -279,46 +278,48 @@ class PhiPage(PageBase):
         self.table.verticalHeader().setVisible(False)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(7, QHeaderView.Stretch)
-        # FR-23.6b：点结果表某行 → 跳到该组页签（组页签未启用时该方法直接返回）
+        # FR-23.6b：点结果表某行 → 批次树选中该组
         self.table.cellClicked.connect(self._on_result_row_clicked)
-        self.lbl_stage_bd = QLabel("先逐组拟合 k_obs，再由同一批 k 换算 Φ_Δ")
-        theme.mark(self.lbl_stage_bd, "hint")
-        self.lbl_stage_bd.setWordWrap(True)
+        # V2.6 FR-40.5：结果区动作条（打开输出 / 复制结果 / 下一步 / 重试）
+        self.actions = ResultActions(self, next_target="figures",
+                                     next_text="下一步：出图导出")
+        self.actions.message.connect(self.status)
+        # 「下一步」留在本页：流程条切到出图导出（定稿 600 dpi 在那一步）
+        self.actions.next_step_requested.connect(lambda _t: self._go_step(len(STEPS) - 1))
+        self.actions.retry_requested.connect(self._run)
+        self.export = ExportBar(on_workbook=self._export_workbook,
+                                on_dashboard=self._export_dashboard)
+        # V2.3 FR-24.2/24.6：导出条的常规反馈走状态栏（不弹模态）
+        self.export.message.connect(self.status)
         box_res = QGroupBox("结果：k_obs 与 Φ_Δ")
         lr = QVBoxLayout(box_res)
-        lr.addWidget(self.lbl_stage_bd)
-        lr.addWidget(self.table)
+        lr.addWidget(self.table, 1)
+        lr.addWidget(self.actions)
+        lr.addWidget(self.export)
 
-        # V2.9.5 FR-72：窄窗口下文件清单/图件纵向排列，画布获得完整宽度
-        upper = QSplitter(Qt.Vertical)
-        upper.addWidget(box_files)
-        upper.addWidget(box_fig)
-        upper.setSizes([170, 470])          # 图件优先：文件清单够看几行即可
-        upper.setChildrenCollapsible(False)
+        split = QSplitter(Qt.Vertical)
+        split.addWidget(self.center_stack)
+        split.addWidget(box_res)
+        split.setChildrenCollapsible(False)
+        split.setStretchFactor(0, 1)
+        split.setStretchFactor(1, 0)
+        split.setSizes([520, 170])          # 图件优先：结果表够看几行即可
 
-        # A 道 FR-23.1：组页签条（QTabBar 只切换**视图过滤**——文件表与画布
-        # 始终是同一实例，绝不按组复制控件/状态）
-        self.group_tabs = GroupTabs()
-        self.group_tabs.groups_selected.connect(self._apply_group_filter)
-        self._group_tab_host = QWidget()
-        lh = QVBoxLayout(self._group_tab_host)
-        lh.setContentsMargins(0, 0, 0, 0)
-        lh.addWidget(self.group_tabs)
-        lh.addWidget(upper, 1)
-
-        right = QSplitter(Qt.Vertical)
-        right.addWidget(self._group_tab_host)
-        right.addWidget(box_res)
-        right.setSizes([600, 170])
-        return right
+        center = QWidget()
+        lay = QVBoxLayout(center)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(6)
+        lay.addWidget(self.verdict)
+        lay.addWidget(split, 1)
+        center.setMinimumWidth(380)
+        return center
 
     def _build_settings_column(self) -> None:
-        """右栏：出图设置 + 实时生图预览接线。"""
+        """出图设置（检查器第 5 步）+ 实时生图预览接线。"""
         self.settings_panel = UnifiedSettingsPanel()
-        self.settings_panel.ed_formats.setText(self.params.ed_formats.text())
-        self.settings_panel.ed_formats.textChanged.connect(
-            lambda: self.params.ed_formats.setText(self.settings_panel.ed_formats.text()))
-        self.settings_panel.changed.connect(lambda: self.status.emit("统一页设置已更新（下一次出图/重算生效）"))
+        self.settings_panel.setMinimumWidth(260)
+        self.settings_panel.setMaximumWidth(280)
+        self.settings_panel.changed.connect(lambda: self.status.emit("出图设置已更新（下一次出图/重算生效）"))
         from ui.widgets.live_render_preview import LiveRenderPreview
         self.live_preview = LiveRenderPreview(self, self._render_live_preview)
         self.live_preview.updated.connect(self.canvas.set_images)
@@ -327,26 +328,274 @@ class PhiPage(PageBase):
         self.chk_live.toggled.connect(self.live_preview.set_enabled)
         self.settings_panel.changed.connect(self._schedule_live_preview)
 
-    def _build_body(self, left_tabs: QTabWidget, right: QSplitter) -> QSplitter:
-        """三栏 splitter；窄窗口时由 :meth:`_apply_responsive_layout` 折成两栏。"""
+    def _build_inspector(self) -> QWidget:
+        """右栏检查器：只展开当前步能改的东西，其余步折成一行摘要。"""
+        self.params = ParamPanel()
+        self.params.changed.connect(self._on_params_changed)
+        self.settings_panel.ed_formats.setText(self.params.ed_formats.text())
+        self.settings_panel.ed_formats.textChanged.connect(
+            lambda: self.params.ed_formats.setText(self.settings_panel.ed_formats.text()))
+        scroll_p = QScrollArea()
+        scroll_p.setWidget(self.params)
+        scroll_p.setWidgetResizable(True)
+        scroll_p.setFrameShape(QFrame.NoFrame)
+        scroll_p.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+
+        self.dye_panel = DyeTimePanel()
+        self.dye_panel.dye_changed.connect(self._on_dye_changed)
+        self.dye_panel.remember_changed.connect(self._on_remember)
+        self.dye_panel.times_changed.connect(self._on_times_changed)
+
+        # ① 导入
+        p_import = QWidget()
+        li = QVBoxLayout(p_import)
+        li.setContentsMargins(0, 0, 0, 0)
+        row = QHBoxLayout()
+        row.addWidget(self.btn_dir)
+        row.addWidget(self.btn_reload)
+        li.addLayout(row)
+        li.addWidget(self.lbl_dir)
+        hint = QLabel("也可以把数据目录直接拖进窗口。文件名里的组名和时间会自动识别，"
+                      "识别不对的在下一步改。")
+        theme.mark(hint, "hint")
+        hint.setWordWrap(True)
+        li.addWidget(hint)
+        li.addWidget(self.chk_lazy)
+        li.addStretch(1)
+        # ② 分组与 QC：染料命名 + 时间工作表
+        # ③ 拟合 k_obs：分析参数
+        # ④ Φ_Δ：参比与 Φ_ref
+        p_phi = QWidget()
+        lp = QVBoxLayout(p_phi)
+        lp.setContentsMargins(0, 0, 0, 0)
+        form = QFormLayout()
+        form.addRow("参比组", self.cmb_reference)
+        form.addRow("Φ_ref", self.sp_phi_ref)
+        lp.addLayout(form)
+        lp.addWidget(self.btn_remember_ref, 0, Qt.AlignLeft)
+        note = QLabel("改参比或 Φ_ref 只重算 Φ_Δ，不会重新拟合 k_obs。")
+        theme.mark(note, "hint")
+        note.setWordWrap(True)
+        lp.addWidget(note)
+        lp.addStretch(1)
+        # ⑤ 出图导出：出图设置 + 实时预览 + 定稿
+        p_fig = QWidget()
+        lfg = QVBoxLayout(p_fig)
+        lfg.setContentsMargins(0, 0, 0, 0)
+        lfg.addWidget(self.settings_panel, 1)
+        live = QHBoxLayout()
+        live.addWidget(self.chk_live)
+        live.addWidget(self.lbl_live, 1)
+        lfg.addLayout(live)
+        lfg.addWidget(self.btn_final)
+
+        self.inspector_stack = QStackedWidget()
+        for w in (p_import, self.dye_panel, scroll_p, p_phi, p_fig):
+            self.inspector_stack.addWidget(w)
+
+        self.lbl_step = QLabel("")
+        theme.mark(self.lbl_step, "strong")
+        self.lbl_step_hint = QLabel("")
+        theme.mark(self.lbl_step_hint, "hint")
+        self.lbl_step_hint.setWordWrap(True)
+
+        # 其余步的一行摘要（点一下跳过去）
+        self.step_summaries: list[QPushButton] = []
+        sums = QVBoxLayout()
+        sums.setSpacing(2)
+        for i, name in enumerate(STEPS):
+            b = QPushButton()
+            b.setObjectName("phiStepSummary")
+            b.setFlat(True)
+            b.setCursor(Qt.PointingHandCursor)
+            b.setToolTip(f"切到「{name}」这一步")
+            b.clicked.connect(lambda _=False, i=i: self._go_step(i))
+            self.step_summaries.append(b)
+            sums.addWidget(b)
+
+        self.btn_prev = QPushButton("←")
+        self.btn_prev.setToolTip("回到上一步")
+        self.btn_prev.clicked.connect(lambda: self._go_step(self.flow_bar.current() - 1))
+        self.btn_next = QPushButton("下一步 →")
+        self.btn_next.setToolTip("去下一步")
+        self.btn_next.clicked.connect(lambda: self._go_step(self.flow_bar.current() + 1))
+        nav = QHBoxLayout()
+        nav.addWidget(self.btn_prev)
+        nav.addWidget(self.btn_next, 1)
+
+        ins = QFrame()
+        ins.setObjectName("phiInspector")
+        lay = QVBoxLayout(ins)
+        lay.setContentsMargins(10, 10, 10, 10)
+        lay.setSpacing(8)
+        lay.addWidget(self.lbl_step)
+        lay.addWidget(self.lbl_step_hint)
+        lay.addWidget(self.inspector_stack, 1)
+        lay.addLayout(sums)
+        lay.addWidget(self.btn_run)
+        lay.addLayout(nav)
+        ins.setMinimumWidth(300)
+        ins.setMaximumWidth(360)
+        return ins
+
+    def _build_body(self, left: QWidget, center: QWidget, inspector: QWidget) -> QSplitter:
+        """三栏 splitter；窄窗口时批次树默认收起（:meth:`_apply_responsive_layout`）。"""
         body = QSplitter(Qt.Horizontal)
-        right.setMinimumWidth(380)
-        self.settings_panel.setMinimumWidth(260)
-        self.settings_panel.setMaximumWidth(280)
-        body.addWidget(left_tabs)
-        body.addWidget(right)
-        body.addWidget(self.settings_panel)
+        body.addWidget(left)
+        body.addWidget(center)
+        body.addWidget(inspector)
         body.setChildrenCollapsible(False)
         body.setStretchFactor(0, 0)
         body.setStretchFactor(1, 1)
         body.setStretchFactor(2, 0)
-        body.setSizes([300, 454, 270])
-        self._left_tabs = left_tabs
-        self._right = right
+        body.setSizes([230, 600, 320])
+        self._tree_col = left
+        self._center = center
+        self._inspector = inspector
         self._body = body
-        self.btn_settings_toggle.toggled.connect(lambda _: self._apply_responsive_layout())
+        self.btn_tree_toggle.toggled.connect(lambda _: self._apply_responsive_layout())
         self._apply_responsive_layout()
         return body
+
+    # ══════════════ 流程条 ══════════════
+    def _go_step(self, idx: int) -> None:
+        """切到第 idx 步：检查器换页、中栏换成清单或图件、摘要与前后按钮跟着变。"""
+        idx = max(0, min(len(STEPS) - 1, int(idx)))
+        if idx and not self.flow_bar.step_enabled(idx):
+            idx = 0
+        self.flow_bar.set_current(idx)
+        self.inspector_stack.setCurrentIndex(idx)
+        self.center_stack.setCurrentIndex(0 if idx < 2 else 1)
+        self.lbl_step.setText(f"第 {idx + 1} 步 · {STEPS[idx]}")
+        self.lbl_step_hint.setText(STEP_HINTS[idx])
+        self.btn_prev.setVisible(idx > 0)
+        if idx > 0:
+            self.btn_prev.setText(f"← {STEPS[idx - 1]}")
+        last = idx >= len(STEPS) - 1
+        self.btn_next.setVisible(not last)
+        if not last:
+            self.btn_next.setText(f"下一步：{STEPS[idx + 1]} →")
+            self.btn_next.setEnabled(self.flow_bar.step_enabled(idx + 1))
+        self._refresh_summaries()
+
+    def _step_summary(self, idx: int) -> str:
+        """某一步当前设置的一行摘要（只读已有状态）。"""
+        if idx == 0:
+            if not self.data_dir:
+                return "还没选数据目录"
+            return f"{self.data_dir.name} · {len(self.scans)} 个谱"
+        if idx == 1:
+            groups = self._groups()
+            n_ex = sum(1 for s in self.scans if s.excluded)
+            return f"{len(groups)} 组 · 剔除 {n_ex} 个" if self.scans else "载入后可改组名和时间"
+        if idx == 2:
+            p = self.params
+            return (f"{p.sp_probe.value():.1f} nm · ±{p.sp_win.value():g} nm · "
+                    f"激发 {p.sp_exc.value():g} nm")
+        if idx == 3:
+            ref = self._reference_group or "自动识别"
+            return f"参比 {ref} · Φ_ref {self.sp_phi_ref.value():.3f}"
+        mode = "已定稿" if self._last_export_mode == "final" else "预览档"
+        return f"{mode} · 格式 {self.params.ed_formats.text() or 'png'}"
+
+    def _refresh_summaries(self) -> None:
+        cur = self.flow_bar.current()
+        for i, b in enumerate(self.step_summaries):
+            b.setVisible(i != cur)
+            b.setText(f"{STEPS[i]}　{self._step_summary(i)}")
+
+    def _update_flow(self) -> None:
+        """按当前数据/结果/过期状态给每一步打 完成 / 待更新 / 未做 标记。"""
+        loaded = bool(self.scans)
+        has_ok = any(not s.excluded for s in self.scans)
+        rr = self._last_rr
+        ok = bool(rr is not None and getattr(rr, "ok", False))
+        phi_ok = ok and any((p or {}).get("status") == "OK"
+                            for p in (getattr(rr, "phi", None) or {}).values())
+        done = [loaded, has_ok, ok, phi_ok, ok and self._last_export_mode == "final"]
+        stale: set = set()
+        if self.banner.is_shown():
+            stale = {4} if self.banner.kind() == "plot" else {2, 3, 4}
+        for i in range(len(STEPS)):
+            if i:
+                self.flow_bar.set_step_enabled(i, loaded, "先选择数据目录")
+            state = STEP_STALE if (i in stale and done[i]) else (STEP_DONE if done[i] else STEP_TODO)
+            self.flow_bar.set_state(i, state)
+        cur = self.flow_bar.current()
+        if cur < len(STEPS) - 1:
+            self.btn_next.setEnabled(self.flow_bar.step_enabled(cur + 1))
+        self._refresh_summaries()
+
+    # ══════════════ 结论卡 ══════════════
+    def _update_verdict(self, rr) -> None:
+        """把本次结果压成一句结论 + 一个大数字（只复述已有字段，不新增判断）。"""
+        if rr is None:
+            self.verdict.set_empty(
+                "还没有结果",
+                "按 F5 或「开始分析」拟合 k_obs" if self.scans
+                else "选择数据目录，再按 F5 开始分析")
+            return
+        if not getattr(rr, "ok", False):
+            self.verdict.set_failed("这次分析没有得到结果",
+                                    str(getattr(rr, "message", "") or "详见运行日志"))
+            return
+        results = getattr(rr, "results", None) or {}
+        phi = getattr(rr, "phi", None) or {}
+        fits = {g: (e or {}).get("pooled") for g, e in results.items()}
+        good = {g: f for g, f in fits.items()
+                if f is not None and getattr(f, "status", "") != "FAILED"}
+        roles = {g: (e or {}).get("role") for g, e in results.items()}
+        ref = next((g for g, r in roles.items() if r == "reference"), "")
+        groups = []
+        for g in sorted(results):
+            f = fits.get(g)
+            failed = g not in good
+            groups.append({
+                "name": g,
+                "sub": "拟合失败" if failed else f"{f.k:.3g} s⁻¹",
+                "pill": "失败" if failed else ROLE_ZH.get(roles.get(g), roles.get(g) or "样品"),
+                "kind": "warn" if failed or g == ref else "ok",
+                "color": self.tree.group_color(g),
+            })
+        lines = []
+        if good:
+            lines.append(f"{len(good)}/{len(results)} 组拟合成功，"
+                         f"R² ≥ {min(f.r2 for f in good.values()):.3f}")
+        cut = [g for g, f in good.items() if getattr(f, "truncated", False)]
+        if cut:
+            lines.append("自动截断：" + "、".join(f"{g}（n={good[g].n}）" for g in cut))
+        hits = sorted((g for g, p in phi.items()
+                       if (p or {}).get("status") == "OK" and g != ref and g in good))
+        if hits:
+            g = hits[0]
+            p = phi[g]
+            phi_ref = float(self.sp_phi_ref.value())
+            headline = f"Φ_Δ = {p['phi']:.2f}"
+            if ref in good and phi_ref > 0:
+                diff = (p["phi"] / phi_ref - 1.0) * 100.0
+                word = "高" if diff >= 0 else "低"
+                headline = f"比参比 {ref} {word} {abs(diff):.0f}%"
+                # 只摆事实：k 比值与 Φ_ref；Φ_Δ 本身还含吸光校正，不在这里写成等式
+                lines.insert(0, f"k_样品 / k_参比 = {good[g].k / good[ref].k:.3f} · "
+                                f"Φ_ref = {phi_ref:.3f}")
+            if len(hits) > 1:
+                lines.append(f"共 {len(hits)} 个样品组有 Φ_Δ，逐组数值见下方结果表")
+            self.verdict.set_verdict(label=f"Φ_Δ · {g}",
+                                     value=f"{p['phi']:.2f}",
+                                     error=f"± {p.get('phi_err', 0.0):.2f}",
+                                     headline=headline, lines=lines[:3], groups=groups)
+            return
+        if good:
+            g = sorted(good)[0]
+            no_ref = any((p or {}).get("status") == "NO_REF" for p in phi.values())
+            self.verdict.set_verdict(
+                label=f"k_obs · {g}", value=f"{good[g].k:.3g}",
+                error="s⁻¹",
+                headline=("k_obs 已拟合，还缺参比组" if no_ref else "k_obs 已拟合，Φ_Δ 没算出来"),
+                lines=(["在「Φ_Δ」这一步指定参比组和 Φ_ref 即可算出 Φ_Δ"] + lines)[:3],
+                groups=groups)
+            return
+        self.verdict.set_failed("所有组都拟合失败", self._failure_hint(rr))
 
     # ══════════════ 懒渲染开关（P1） ══════════════
     def _lazy_enabled(self) -> bool:
@@ -482,8 +731,12 @@ class PhiPage(PageBase):
         else:
             self._reference_group = ""
         self.cmb_reference.blockSignals(False)
-        # A 道 FR-23.1：载入后重建组页签（保持当前选中组；<2 组则整条隐藏）
-        self.group_tabs.rebuild(self._groups(), self._group_title)
+        self._refresh_tree()
+        self._update_flow()
+        if self._last_rr is None:
+            self._update_verdict(None)
+        if self.flow_bar.current() == 0 and has_ok:
+            self._go_step(1)
 
     def _reload_dir(self) -> None:
         """重新载入：强制清空解析缓存（FR-6.8 的失效入口）。"""
@@ -512,12 +765,12 @@ class PhiPage(PageBase):
         """
         if group and dye:
             self.files.set_dye(group, dye)
-            self.group_tabs.refresh_titles(self._group_title)
+            self._refresh_tree()
             self.logged.emit("INFO", f"染料命名：{group} → {dye}")
             return
         # 恢复自动命名：``set_dye("", "")`` 只留一个空键，显示侧据此回落自动值
         self.files.set_dye("", "")
-        self.group_tabs.refresh_titles(self._group_title)
+        self._refresh_tree()
 
     def _on_remember(self, group: str, remember: bool) -> None:
         """勾/取消「记住」→ 写/删 dyes.yaml（持久化，FR-11.1）。"""
@@ -540,7 +793,7 @@ class PhiPage(PageBase):
         hook = getattr(self.dye_panel, "set_group_dye", None)
         if callable(hook):
             hook(group, dye)
-        self.group_tabs.refresh_titles(self._group_title)
+        self._refresh_tree()
         self.logged.emit("INFO", f"染料命名（来自文件清单）：{group} → {dye}")
 
     def _on_file_time_changed(self, name: str, t: float) -> None:
@@ -573,6 +826,7 @@ class PhiPage(PageBase):
     # ══════════════ 结果过期横幅（A25.1） ══════════════
     def _refresh_banner(self) -> None:
         self.banner.refresh(self.cfg, has_result=self._last_rr is not None)
+        self._update_flow()
 
     def on_cfg_changed(self) -> None:
         """外部（模板套用/批次载入）换了 cfg 后刷新"结果过期"横幅（V2.4 FR-26.3③）。
@@ -632,8 +886,9 @@ class PhiPage(PageBase):
         def done(made) -> None:
             figs = self._preview_pngs(rr)
             self.canvas.set_images(figs, keep_index=True)
-            self.group_tabs.reapply()
+            self._apply_group_filter(self.tree.selected_groups())
             self.banner.set_snapshot(cfg)
+            self._refresh_banner()
             self.logged.emit("INFO",
                              f"已重渲 {len(made)} 张受影响图件（数值未重算）")
 
@@ -670,8 +925,8 @@ class PhiPage(PageBase):
         menu = QMenu(self)
         act_copy = menu.addAction("复制本行")
         act_copy.triggered.connect(lambda *_: self._copy_result_row(row))
-        act_jump = menu.addAction("跳到该组页签")
-        act_jump.setEnabled(not self.group_tabs.isHidden() and self.group_tabs.count() > 1)
+        act_jump = menu.addAction("在批次树里选中该组")
+        act_jump.setEnabled(len(self.tree.groups()) > 1)
         act_jump.triggered.connect(lambda *_: self._on_result_row_clicked(row))
         menu.exec(self.table.viewport().mapToGlobal(pos))
 
@@ -683,10 +938,13 @@ class PhiPage(PageBase):
         except Exception as err:                           # noqa: BLE001
             self.status.emit(f"复制失败：{err}")
 
-    def _on_group_tab_context_menu(self, pos) -> None:      # noqa: ANN001
+    def _on_tree_context_menu(self, pos) -> None:          # noqa: ANN001
         from PySide6.QtWidgets import QMenu
-        idx = self.group_tabs.tabAt(pos)
-        gs = self.group_tabs.groups_at(idx)        # 「全部组（对比）」没有"本组"动作
+        it = self.tree.itemAt(pos)
+        if it is None:
+            return
+        self.tree.setCurrentItem(it)
+        gs = self.tree.selected_groups()           # 「全部组（对比）」没有"本组"动作
         if not gs:
             return
         group = next(iter(gs))
@@ -699,21 +957,22 @@ class PhiPage(PageBase):
         act_open = menu.addAction("打开数据目录")
         act_open.setEnabled(bool(self.data_dir))
         act_open.triggered.connect(lambda *_: open_folder(self.data_dir))
-        menu.exec(self.group_tabs.mapToGlobal(pos))
+        menu.exec(self.tree.viewport().mapToGlobal(pos))
 
-    # ══════════════ A 道 FR-23：按染料组分页（视图过滤） ══════════════
-    def set_group_tabs(self, enabled: bool) -> None:
-        """启用/关闭「按染料组分页」。
-
-        flow 布局由 ``main_window`` 显式开启；classic 保持默认关闭（V1.x 外观
-        一字不变）。开启后仍需 ≥2 个组才会出现页签条（FR-23.1）。
-        """
-        self.group_tabs.set_feature_enabled(enabled)
-        if enabled and self.scans:
-            self.group_tabs.rebuild(self._groups(), self._group_title)
+    # ══════════════ 批次树：选组即过滤（视图过滤，不复制控件） ══════════════
+    def _refresh_tree(self) -> None:
+        """按当前 scans / 勾选 / 参比 / 结果重建批次树（保持选中组）。"""
+        checked = {str(p) for p in self.files.checked_paths()} if self.scans else set()
+        excluded = [str(s.path) for s in self.scans
+                    if not s.excluded and str(s.path) not in checked]
+        self.tree.set_scans(self.scans, self._group_title,
+                            reference=self._reference_group, excluded=excluded)
+        self.lbl_tree.setText(f"批次 {self.data_dir.name}" if self.data_dir else "批次")
+        if self._last_rr is not None:
+            self.tree.set_result(self._last_rr)
 
     def _apply_group_filter(self, groups) -> None:
-        """组页签选中变化：只改文件表**行可见性**与画布**可见集**，不重建任何控件。"""
+        """批次树选中变化：只改文件表**行可见性**与画布**可见集**，不重建任何控件。"""
         self.files.set_group_filter(groups)
         if groups is None:
             self.canvas.set_visible_filter(None)
@@ -727,7 +986,7 @@ class PhiPage(PageBase):
         return sorted({s.group for s in (getattr(self, "scans", None) or [])})
 
     def _group_title(self, group: str) -> str:
-        """页签标题：染料名 · 组名（两者相同时只显示一个）。"""
+        """组标题：染料名 · 组名（两者相同时只显示一个）。"""
         try:
             from core.dyes import auto_dye_name
             dye = str(self.files.dye_map().get(group) or auto_dye_name(group))
@@ -736,16 +995,13 @@ class PhiPage(PageBase):
         return group if dye == group else f"{dye} · {group}"
 
     def _on_result_row_clicked(self, row: int, _col: int = 0) -> None:
-        """FR-23.6b：点结果表某行 → 切到该组的页签。"""
-        if not self.group_tabs.feature_enabled() or self.group_tabs.isHidden():
-            return
+        """FR-23.6b：点结果表某行 → 批次树选中该组（画布与清单随之过滤）。"""
         rr = getattr(self, "_last_rr", None)
         if rr is None or row < 0:
             return
         rows = sorted((getattr(rr, "results", None) or {}).items())
-        if row >= len(rows):
-            return
-        self.group_tabs.select_group(rows[row][0])
+        if row < len(rows):
+            self.tree.select_group(rows[row][0])
 
     # ══════════════ 分析 ══════════════
     def _remember_reference(self) -> bool:
@@ -777,6 +1033,9 @@ class PhiPage(PageBase):
         else:
             self.logged.emit("INFO", "参比组：自动（ref- 前缀/角色）")
         self._recompute_phi_only()
+        if self.scans:
+            self._refresh_tree()
+        self._refresh_summaries()
 
     def _recompute_phi_only(self, *_args) -> None:
         """V2.9.4 FR-69：k_obs 已拟合时，改参比/Φ_ref 只重算 Φ_Δ，不重新拟合 k。"""
@@ -793,6 +1052,9 @@ class PhiPage(PageBase):
         rr.phi = compute_phi(results, cfg)
         rr.results = results
         self._fill_table(rr)
+        self.tree.set_result(rr)
+        self._update_verdict(rr)
+        self._update_flow()
         self.status.emit("参比/Φ_ref 已更新：仅重算 Φ_Δ（k_obs 拟合结果复用）")
 
     def _run(self, only_paths=None) -> None:
@@ -902,6 +1164,11 @@ class PhiPage(PageBase):
             # A25.1：分析成功 → 记下本次用的配置；之后参数再变才算"过期"
             self.banner.set_snapshot(self.params.config(self.cfg))
         self._fill_table(rr)
+        self.tree.set_result(rr)
+        self._update_verdict(rr)
+        self._update_flow()
+        if rr.ok and self.flow_bar.current() < 3:
+            self._go_step(3)
         if rr.run_dir:
             self.export.set_run_dir(rr.run_dir)
             self.backfill.reset()          # M5：新的一轮分析 → 补渲步骤重新计
@@ -909,7 +1176,7 @@ class PhiPage(PageBase):
             figs = rr.figures or self._preview_pngs(rr)
             self.canvas.set_images(figs, keep_index=True)
             # A 道 FR-23.5：整批换图后重放当前组过滤（懒渲染排队占位不受影响）
-            self.group_tabs.reapply()
+            self._apply_group_filter(self.tree.selected_groups())
         if not rr.ok:
             self.btn_final.setEnabled(False)
             self.logged.emit("ERROR", rr.message or "分析未产生结果")
@@ -1087,6 +1354,7 @@ class PhiPage(PageBase):
             if figs:
                 self.canvas.set_images(figs, keep_index=True)
         self.backfill.update_progress()
+        self._update_flow()
 
     def _emit_interpretation(self, rr) -> None:
         """把人话解读打到日志区（FR-9.3；只复述已有结果，不新增判断）。
@@ -1183,35 +1451,19 @@ class PhiPage(PageBase):
         self._apply_responsive_layout()
 
     def _apply_responsive_layout(self) -> None:
-        """V2.9.6 M4：窄页三栏最小宽超页宽时，隐藏设置区/改为二栏，避免叠加。"""
+        """窄页（< NARROW_PAGE_W）批次树默认收起，顶部「批次」按钮可临时展开。"""
         if not hasattr(self, "_body"):
             return
-        # 三栏实际最小宽（含中栏按钮行）约 1000，留出余量：低于 1180 就改二栏 + 切换按钮
         narrow = self.width() < NARROW_PAGE_W
+        show = (not narrow) or self.btn_tree_toggle.isChecked()
+        self.btn_tree_toggle.setVisible(narrow)
+        if show == getattr(self, "_tree_shown", None):
+            return
+        self._tree_shown = show
         try:
-            if narrow:
-                self._body.setChildrenCollapsible(True)
-                self._left_tabs.setMinimumWidth(320)
-                self._left_tabs.setMaximumWidth(340)
-                self._right.setMinimumWidth(220)
-                if self.btn_settings_toggle.isChecked():
-                    self._left_tabs.setVisible(False)
-                    self.settings_panel.setVisible(True)
-                    self._body.setSizes([0, 372, 280])
-                else:
-                    self.settings_panel.setVisible(False)
-                    self._left_tabs.setVisible(True)
-                    self._body.setSizes([330, 352, 0])
-            else:
-                self._body.setChildrenCollapsible(False)
-                self._left_tabs.setVisible(True)
-                self.settings_panel.setVisible(True)
-                self._left_tabs.setMinimumWidth(320)
-                self._left_tabs.setMaximumWidth(380)
-                self._right.setMinimumWidth(380)
-                self.settings_panel.setMinimumWidth(260)
-                self.settings_panel.setMaximumWidth(280)
-                self._body.setSizes([330, 454, 270])
+            self._tree_col.setVisible(show)
+            rest = max(380, self.width() - 320 - (230 if show else 0))
+            self._body.setSizes([230 if show else 0, rest, 320])
         except RuntimeError:
             pass
 

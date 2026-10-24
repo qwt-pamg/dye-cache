@@ -230,10 +230,6 @@ class MainWindow(QMainWindow, MainWindowNavMixin, MainWindowActionsMixin):
     def _build_pages(self) -> None:
         """**只构造**功能页对象（两种布局共用同一批实例）。"""
         self.phi_page = PhiPage(self.cfg)
-        # V2.6 FR-40.5：Φ_Δ 结果区「下一步」→ ③ 图件 / 定稿出图
-        _phi_next = getattr(self.phi_page, "next_step_requested", None)
-        if _phi_next is not None:
-            _phi_next.connect(self._on_next_step)
         # V2.9.4 FR-69：ComparePage 仅保留类/API 供旧测试；不再作为用户入口
         self.compare_page = ComparePage(self.cfg)
         self.pages = [self.phi_page]
@@ -310,8 +306,6 @@ class MainWindow(QMainWindow, MainWindowNavMixin, MainWindowActionsMixin):
         # 日志仍报成功，但广播/横幅不出现。
         for page in (self.stack_page, self.spectra_page):
             page.plot_params_written.connect(self._on_plot_params_written)
-        # A 道 FR-23：经典布局显式关闭组页签（V1.x 外观一字不变）
-        self.phi_page.set_group_tabs(False)
         titles = ["① 单线态氧（k_obs → Φ_Δ）", "② 堆叠/叠加图", "③ 紫外/荧光作图"]
         for p, title in zip(self.pages[:3], titles):
             self.tabs.addTab(p, title)
@@ -341,8 +335,6 @@ class MainWindow(QMainWindow, MainWindowNavMixin, MainWindowActionsMixin):
         self.data_page = DataPage(self.cfg)
         self.analysis_page = AnalysisPage(self.cfg, phi_page=self.phi_page,
                                           compare_page=self.compare_page)
-        # A 道 FR-23：flow 布局启用「按染料组分页」（classic 保持 V1.x 外观）
-        self.phi_page.set_group_tabs(True)
         # V2.1 FR-22.7：作图台按数据类型内部创建三页（紫外叠图/堆叠时间演化/荧光）
         self.plot_page = PlotPage(self.cfg)
         # V2.5 FR-33.3：工作台「写入出图参数」→ 广播 cfg + Φ_Δ 过期横幅
