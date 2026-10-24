@@ -29,7 +29,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox,
 from core.io import Spectrum, load_spectra_files
 from core.pipeline import run_spectra_plots
 from core.spectra import molar_extinction
-from ui.pages.base_page import PageBase
+from ui.pages.base import PageBase
 from ui.widgets.export_bar import ExportBar
 from ui.widgets.live_plot import LivePlotCanvas, label_text
 from ui.widgets.mpl_canvas import CanvasPanel

@@ -43,7 +43,7 @@ for extra in ("README_设计说明.md",):
 def _project_modules(*dirs: str) -> list:
     """扫描项目内的 .py，返回可 import 的模块名（排序，含包名）。
 
-    * ``core/io.py`` → ``core.io``；``ui/pages/phi_page.py`` → ``ui.pages.phi_page``
+    * ``core/io.py`` → ``core.io``；``ui/pages/phi/page.py`` → ``ui.pages.phi``
     * ``core/__init__.py`` → ``core``；``core/io/__init__.py`` → ``core.io``
       （δ 批 FS1 子包化后仍正确：包名取父目录的点分路径）
     * 跳过 ``__pycache__``（.pyc 不该进 hiddenimports）

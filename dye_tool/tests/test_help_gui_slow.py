@@ -27,7 +27,7 @@ def _pump(app, ms=80):
 def test_real_mouse_hover_repeat_and_state(qt_app, monkeypatch):
     from core.config import default_config
     from ui.help_texts import install_app_help
-    from ui.shell.cards.extinction import ExtinctionPanel
+    from ui.pages.tasks.extinction import ExtinctionPanel
     shown, hidden = [], []
     monkeypatch.setattr("ui.help_texts.QToolTip.showText",
                         lambda pos, text, *a, **k: shown.append(text))
@@ -61,7 +61,7 @@ def test_real_mouse_hover_repeat_and_state(qt_app, monkeypatch):
 def test_mainwindow_audit_and_1024_phi_layout(qt_app, tmp_path):
     from core.config import default_config
     from ui.help_texts import audit_help
-    from ui.main_window import MainWindow
+    from ui.window.main_window import MainWindow
     cfg = default_config()
     cfg.setdefault("gui", {}).update({"show_welcome": False, "recent_dirs": [],
                                       "out_root": str(tmp_path / "runs")})
@@ -100,7 +100,7 @@ def test_page_and_dialog_hover_help_visible(qt_app, monkeypatch):
     from PySide6.QtWidgets import QDialog, QPushButton
     from core.config import default_config
     from ui.help_texts import GENERIC_STATIC_PATTERNS, install_app_help
-    from ui.main_window import MainWindow
+    from ui.window.main_window import MainWindow
     shown = []
     monkeypatch.setattr("ui.help_texts.QToolTip.showText",
                         lambda pos, text, *a, **k: shown.append(text))

@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QFileDialog,
                                QVBoxLayout, QWidget)
 
 from core.paths import app_root
-from ui.pages.base_page import PageBase
+from ui.pages.base import PageBase
 from ui.widgets.dye_time_panel import DyeTimePanel
 from ui.widgets.file_table import FileTable
 from ui import theme

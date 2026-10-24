@@ -1,4 +1,8 @@
-"""V2.8 FR-48：MainWindow 薄装配类（mixin 见 window_nav/window_actions）。"""
+"""主窗口装配：建页面、选布局（flow 任务流 / classic 平铺页签）、接信号。
+
+菜单/状态栏/日志区见 :mod:`ui.window.actions`，切页与页面间接线见
+:mod:`ui.window.navigation`。
+"""
 
 from __future__ import annotations
 
@@ -22,18 +26,18 @@ from core.config import save_config
 from core.paths import config_path as _cfg_path
 from core.synthetic import make_synthetic
 from core import VERSION
-from ui.pages.base_page import ErrorDialog
-from ui.pages.compare_page import ComparePage
-from ui.pages.phi_page import PhiPage
-from ui.pages.spectra_page import SpectraPage
-from ui.pages.stack_page import StackPage
+from ui.pages.base import ErrorDialog
+from ui.pages.compare import ComparePage
+from ui.pages.phi import PhiPage
+from ui.pages.spectra import SpectraPage
+from ui.pages.stack import StackPage
 from ui.workers import Job
-from ui.shell.window_parts import MIN_WINDOW_H, MIN_WINDOW_W
+from ui.window.parts import MIN_WINDOW_H, MIN_WINDOW_W
 from PySide6.QtWidgets import QMainWindow
-from ui.shell.window_actions import MainWindowActionsMixin
-from ui.shell.window_nav import MainWindowNavMixin
+from ui.window.actions import MainWindowActionsMixin
+from ui.window.navigation import MainWindowNavMixin
 
-log = logging.getLogger("dye_tool.ui.main_window")
+log = logging.getLogger("dye_tool.ui.window.main_window")
 
 class MainWindow(QMainWindow, MainWindowNavMixin, MainWindowActionsMixin):
     """主窗口：装配层薄壳（V2.8 FR-48 拆分；行为零变）。"""
@@ -243,7 +247,7 @@ class MainWindow(QMainWindow, MainWindowNavMixin, MainWindowActionsMixin):
         """第 5 页「染料库」（FR-11.6）；组件不可用时降级为不加载，不阻塞启动。"""
         self.dye_page = None
         try:
-            from ui.widgets.dye_library_page import DyeLibraryPage
+            from ui.pages.dye_library import DyeLibraryPage
             from core.paths import resolve_out_root
             out_root = resolve_out_root(self.cfg)
             self.dye_page = DyeLibraryPage(out_root=out_root)
@@ -332,11 +336,13 @@ class MainWindow(QMainWindow, MainWindowNavMixin, MainWindowActionsMixin):
         """V2.0 任务流壳：左侧导航 + 主页 + 五个任务页。"""
         from PySide6.QtWidgets import QStackedWidget
 
-        from ui.shell.analysis_page import AnalysisPage
-        from ui.shell.data_page import DataPage
-        from ui.shell.home_page import HomePage
-        from ui.shell.nav import NavBar
-        from ui.shell.settings_page import ArchivePage, PlotPage, SettingsPage
+        from ui.pages.analysis import AnalysisPage
+        from ui.pages.data import DataPage
+        from ui.pages.home import HomePage
+        from ui.window.nav import NavBar
+        from ui.pages.archive import ArchivePage
+        from ui.pages.plot import PlotPage
+        from ui.pages.settings import SettingsPage
 
         self.nav = NavBar()
         # V2.6 FR-40.3：Alt+1..6 切页 + 导航项 tooltip 标注快捷键

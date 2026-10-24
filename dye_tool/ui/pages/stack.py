@@ -28,7 +28,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QFormLayout, QGroupBox,
 
 from core.io import collect_scans
 from core.pipeline import run_stack
-from ui.pages.base_page import PageBase
+from ui.pages.base import PageBase
 from ui.widgets.export_bar import ExportBar
 from ui.widgets.file_table import FileTable
 from ui.widgets.live_plot import LivePlotCanvas, label_text

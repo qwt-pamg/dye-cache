@@ -16,273 +16,34 @@ from typing import Optional
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox,
-                               QFrame, QGroupBox, QHBoxLayout, QHeaderView,
-                               QComboBox, QDoubleSpinBox, QLabel, QPushButton,
-                               QScrollArea, QSplitter,
-                               QTabBar, QTableWidget, QTableWidgetItem,
+                               QComboBox, QDoubleSpinBox, QGroupBox, QHBoxLayout,
+                               QHeaderView, QLabel, QPushButton, QScrollArea,
+                               QSplitter, QTableWidget, QTableWidgetItem,
                                QTabWidget, QVBoxLayout, QWidget)
 
 from core.io import collect_scans
 from core.pipeline import rerender_figures, run_directory
-from ui.pages.base_page import PageBase
+from ui.pages.base import PageBase
 from ui.widgets.dye_time_panel import DyeTimePanel
 from ui.widgets.export_bar import ExportBar, open_folder
 from ui.widgets.file_table import ROLE_ZH, FileTable
 from ui.widgets.mpl_canvas import CanvasPanel
 from ui.widgets.param_panel import ParamPanel
-from ui.workers import Job
+from ui.widgets.result_actions import ResultActions
+from .backfill import FigureBackfill
+from .group_tabs import GroupTabs, figure_names
+from .settings_panel import UnifiedSettingsPanel
+from .stale import StaleBanner
 from ui import theme
 
 log = logging.getLogger("dye_tool.ui.phi")
-
-#: A13（V2.x 审查）：补渲线程在 `wait()` 超时后**脱离页面生命周期**的强引用表。
-#: 为什么需要：`_cancel_fig_job` 已经"超时就不丢引用"，但那个引用挂在**页面上**；
-#: 用户关窗时页面析构 → 子 QThread 连同父对象一起被销毁 → Qt 报
-#: "QThread: Destroyed while thread is still running" 并可能崩进程（同 0xC0000409 类）。
-#: 这里把超时线程 `setParent(None)` 后存到模块级列表，让它活到自然结束。
-_ORPHAN_JOBS: list = []
 
 RESULT_HEADERS = ["组别", "角色", "k ± σk (s⁻¹)", "R²", "n", "A(0)",
                   "Φ_Δ ± σ", "状态 / 备注"]
 
 
-
-
 #: 页面宽度低于它时，三栏改为二栏（右侧出图设置与左侧参数共用一栏，按钮切换）
 NARROW_PAGE_W = 1180
-
-
-class UnifiedSettingsPanel(QWidget):
-    """V2.9.4 FR-70：统一页右侧设置区（可滚动/最小宽，兼容 ComparePage 设置项）。"""
-    changed = Signal()
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        from PySide6.QtWidgets import QFormLayout
-        self._form = QFormLayout()
-        self.cmb_fig_style = QComboBox()
-        self.cmb_fig_style.addItem('默认（柱状/森林）', None)
-        self.cmb_fig_style.addItem('柱状', 'bar')
-        self.cmb_fig_style.addItem('曲线', 'line')
-        self.cmb_fig_style.addItem('散点', 'scatter')
-        self.cmb_fig_style.setToolTip('工作台/定稿 fig c/d 图式；默认与 2.8.0 一致')
-        self.chk_err = QCheckBox('误差棒')
-        self.chk_err.setChecked(True)
-        self.chk_annot = QCheckBox('关键值标注')
-        self.chk_transparent = QCheckBox('透明背景')
-        self.chk_ci = QCheckBox('Φ_Δ bootstrap 带')
-        self.chk_ci.setToolTip('需结果含 bootstrap CI；无 CI 时自动不画')
-        self.cmb_unit = QComboBox()
-        self.cmb_unit.addItems(['s', 'min', 'h'])
-        self._form.addRow('图式（c/d）', self.cmb_fig_style)
-        self._form.addRow('', self.chk_err)
-        self._form.addRow('', self.chk_annot)
-        self._form.addRow('', self.chk_transparent)
-        self._form.addRow('', self.chk_ci)
-        self._form.addRow('时间轴单位', self.cmb_unit)
-        from ui.widgets.param_panel import FormatsPicker
-        self.ed_formats = FormatsPicker()
-        self.ed_formats.setToolTip('导出格式（png/svg/jpg/pdf）；与左侧参数面板同步')
-        self._form.addRow('导出格式', self.ed_formats)
-        self.ed_formats.textChanged.connect(self._apply)
-        inner = QWidget()
-        inner.setLayout(self._form)
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        scroll.setWidget(inner)
-        self.setMinimumWidth(320)
-        self.setMaximumWidth(440)
-        lay = QVBoxLayout(self)
-        lay.setContentsMargins(0, 0, 0, 0)
-        lay.addWidget(QLabel('统一页设置（热更新）'))
-        lay.addWidget(scroll, 1)
-        for w in (self.cmb_fig_style, self.cmb_unit):
-            w.currentIndexChanged.connect(self._apply)
-        for w in (self.chk_err, self.chk_annot, self.chk_transparent, self.chk_ci):
-            w.toggled.connect(self._apply)
-
-    def _apply(self, *_args) -> None:
-        from core.render import plotting_jacs
-        plotting_jacs.set_figure_session(
-            style=self.cmb_fig_style.currentData(),
-            error_bars=self.chk_err.isChecked(),
-            annotate=self.chk_annot.isChecked(),
-            transparent=self.chk_transparent.isChecked(),
-            time_unit=self.cmb_unit.currentText(),
-            ci_band=self.chk_ci.isChecked())
-        self.changed.emit()
-
-    def values(self) -> dict:
-        return {'style': self.cmb_fig_style.currentData(),
-                'error_bars': self.chk_err.isChecked(),
-                'annotate': self.chk_annot.isChecked(),
-                'transparent': self.chk_transparent.isChecked(),
-                'time_unit': self.cmb_unit.currentText(),
-                'ci_band': self.chk_ci.isChecked()}
-
-
-class ResultActions(QWidget):
-    """V2.6 FR-40.5：结果区动作条（Φ_Δ / ε / A@λ / kobs 共用一套组件）。
-
-    只做"产物入口 + 下一步 + 失败重试"三件事，不改任何业务逻辑：
-
-    * 「打开输出文件」「复制结果」——有产物/结果文本时才可用；
-    * 「下一步：③ 图件 …」——任务成功后可用，点击发 next_step_requested；
-    * 「重试」——任务失败时可用，点击发 retry_requested（页面连到自己的 _run）；
-    * lbl_fix 显示中文"如何修复"提示（非模态）。
-    """
-
-    message = Signal(str)
-    next_step_requested = Signal(str)
-    retry_requested = Signal()
-
-    def __init__(self, parent: Optional[QWidget] = None, *,
-                 next_target: str = "plot",
-                 next_text: str = "下一步：③ 图件 / 定稿出图"):
-        super().__init__(parent)
-        self.next_target = str(next_target)
-        self._output: Optional[Path] = None
-        self._result_text = ""
-        self.btn_open_output = QPushButton("打开输出文件")
-        self.btn_copy_result = QPushButton("复制结果")
-        self.btn_next_step = QPushButton(next_text)
-        self.btn_next_step.setToolTip(
-            "跳到下一步：③ 图件预览 / 定稿出图（或 ④ 档案查看历史结果）")
-        self.btn_retry = QPushButton("重试")
-        self.btn_retry.setToolTip("用当前参数重新运行（走同一条既有分析链路）")
-        self.lbl_fix = QLabel("")
-        self.lbl_fix.setWordWrap(True)
-        theme.mark(self.lbl_fix, "warnHint")
-        self.btn_open_output.clicked.connect(self._open_output)
-        self.btn_copy_result.clicked.connect(self._copy_result)
-        self.btn_next_step.clicked.connect(
-            lambda: self.next_step_requested.emit(self.next_target))
-        self.btn_retry.clicked.connect(self.retry_requested.emit)
-        lay = QHBoxLayout(self)
-        lay.setContentsMargins(0, 0, 0, 0)
-        lay.addWidget(self.lbl_fix, 1)
-        lay.addWidget(self.btn_open_output)
-        lay.addWidget(self.btn_copy_result)
-        lay.addWidget(self.btn_next_step)
-        lay.addWidget(self.btn_retry)
-        self.reset()
-
-    # ── 对外状态接口 ──
-    def set_output(self, path) -> None:
-        """登记可打开的输出（文件或目录；None = 无产物 → 置灰）。"""
-        self._output = Path(path) if path else None
-        self.btn_open_output.setEnabled(self._output is not None)
-
-    def set_result_text(self, text: str) -> None:
-        """登记"复制结果"的文本（空串 → 置灰）。"""
-        self._result_text = str(text or "")
-        self.btn_copy_result.setEnabled(bool(self._result_text.strip()))
-
-    def set_state(self, ok: bool, *, failure_hint: str = "") -> None:
-        """成功后开放"下一步"；失败后开放"重试"并显示中文修复提示。"""
-        ok = bool(ok)
-        self.btn_next_step.setEnabled(ok)
-        self.btn_retry.setEnabled(not ok)
-        if ok:
-            self.lbl_fix.setText("")
-            self.lbl_fix.setVisible(False)
-        else:
-            self.lbl_fix.setText(str(failure_hint or ""))
-            self.lbl_fix.setVisible(bool(failure_hint))
-
-    def reset(self) -> None:
-        """运行开始/尚无结果：四个动作全部置灰（不动 lbl_fix 文本）。"""
-        self._output = None
-        self._result_text = ""
-        for b in (self.btn_open_output, self.btn_copy_result,
-                  self.btn_next_step, self.btn_retry):
-            b.setEnabled(False)
-
-    # ── 动作 ──
-    def _open_output(self) -> None:
-        if self._output is None:
-            self.message.emit("还没有可打开的输出文件")
-            return
-        from PySide6.QtCore import QUrl
-        from PySide6.QtGui import QDesktopServices
-        try:
-            opened = QDesktopServices.openUrl(
-                QUrl.fromLocalFile(str(self._output)))
-        except Exception as err:                       # noqa: BLE001
-            self.message.emit(f"打开输出文件失败：{err}")
-            return
-        self.message.emit(f"已打开输出文件：{self._output}" if opened
-                          else f"无法自动打开，请手动前往：{self._output}")
-
-    def _copy_result(self) -> None:
-        from PySide6.QtGui import QGuiApplication
-        text = self._result_text.strip()
-        if not text:
-            self.message.emit("当前没有可复制的结果")
-            return
-        try:
-            QGuiApplication.clipboard().setText(self._result_text)
-        except Exception as err:                       # noqa: BLE001
-            self.message.emit(f"复制结果失败：{err}")
-            return
-        self.message.emit("结果已复制到剪贴板")
-
-
-class _PreviewRenderJob(Job):
-    """预览档后台补渲（P1 懒渲染）。
-
-    与普通 ``Job`` 的唯一区别：**每画完一张图就发一次** ``wrote(str)``，让画布
-    能"渲染完一张、出现一张"，而不是等整批跑完才刷新。它只跑绘图阶段
-    （:func:`core.pipeline.rerender_figures`），不重新读文件、不重算数值，
-    因此补渲出的图与"一次跑完"完全一致。
-    """
-
-    wrote = Signal(str)
-    step_done = Signal(str)
-
-    def run(self) -> None:                              # noqa: D102 —— QThread 约定
-        try:
-            from core import plotting_jacs
-            steps = [s for s in (self._steps or [])
-                     if s in plotting_jacs.STEP_ORDER]
-            if not steps:
-                steps = list(plotting_jacs.STEP_ORDER)
-            figdir = self._rr.figures_dir(self._mode)
-            before = {p.name for p in figdir.glob("*.png")} if figdir else set()
-            ok = True
-            for i, s in enumerate(steps):
-                if self._cancel:
-                    ok = False
-                    break
-                self._on_progress(int(100 * i / len(steps)),
-                                  f"后台补渲 {s}（{i + 1}/{len(steps)}）")
-                self._on_log("INFO", f"补渲图 {s} …")
-                rerender_figures(self._rr.scans, self._rr.results, self._rr.phi,
-                                 self._rr.controls, self._cfg, self._rr.run_dir,
-                                 export_mode=self._mode, only=[s],
-                                 group_dye=self._dye)
-                now = {p.name for p in figdir.glob("*.png")} if figdir else set()
-                for nm in sorted(now - before):
-                    self.wrote.emit(str(figdir / nm))
-                before = now
-                # 本步骤渲染完毕：即使一张新图都没有（如图 d 无可用 Φ_Δ）也要报，
-                # 好让界面收掉它名下"渲染中"的占位
-                if not self._cancel:
-                    self.step_done.emit(str(s))
-            self._on_progress(100, "补渲完成" if ok else "补渲已取消")
-            if self._cancel:
-                self.cancelled.emit()          # S6：取消也要有明确终态
-                return
-            self.done.emit(ok)
-        except Exception as err:                        # noqa: BLE001 —— 顶层兜底
-            import traceback
-            self.failed.emit(f"{type(err).__name__}: {err}", traceback.format_exc())
-
-    def configure(self, rr, cfg: dict, steps, dye: dict,
-                  mode: str = "preview") -> None:
-        self._rr, self._cfg, self._steps = rr, cfg, list(steps or [])
-        self._dye, self._mode = dict(dye or {}), mode
 
 
 class PhiPage(PageBase):
@@ -306,20 +67,9 @@ class PhiPage(PageBase):
         self._last_rr = None
         self._last_result_text: str = ""
         self._time_overrides: dict = {}
-        self._fig_job: Optional[_PreviewRenderJob] = None
-        self._last_fig_job = None               # M5：收尾判断用的"任务身份"
-        self._steps_tried: set[str] = set()     # M5：本次 run 已排过的补渲步骤
-        self._promised_figs: set[str] = set()      # 本轮"已排期"的图件名
-        # A 道 FR-23：组页签（视图过滤；默认关闭，flow 布局由 main_window 开启）
-        self._group_tabs_enabled = False
-        self._group_tab_groups: list = []          # [None(对比), {组1}, {组2}, …]
+        self.backfill = FigureBackfill(self)    # P1：预览档其余图件的后台补渲
         # FR-24.9：①数据页整定单向同步的预置载荷（下一次 _on_loaded 消费）
         self._pending_overrides: dict = {}
-        # A25.1（V2.3 §12）：上次分析时的配置快照 + "结果过期"横幅状态
-        self._cfg_snapshot: Optional[dict] = None
-        self._banner_kind: str = ""        # "" | "plot" | "numeric"
-        self._banner_sections: list = []
-        self._banner_keys: list = []       # plot.jacs 内变过的叶子键（M5 细分用）
         #: 最近一次产物档位（"preview" | "final"）：重渲时按它选输出目录，
         #: 避免"已定稿后再重渲把画布降回预览分辨率"（A09）。
         self._last_export_mode: str = "preview"
@@ -495,11 +245,8 @@ class PhiPage(PageBase):
 
         # A 道 FR-23.1：组页签条（QTabBar 只切换**视图过滤**——文件表与画布
         # 始终是同一实例，绝不按组复制控件/状态）
-        self.group_tabs = QTabBar()
-        self.group_tabs.setExpanding(False)
-        self.group_tabs.setUsesScrollButtons(True)
-        self.group_tabs.setVisible(False)
-        self.group_tabs.currentChanged.connect(self._on_group_tab_changed)
+        self.group_tabs = GroupTabs()
+        self.group_tabs.groups_selected.connect(self._apply_group_filter)
         self._group_tab_host = QWidget()
         lh = QVBoxLayout(self._group_tab_host)
         lh.setContentsMargins(0, 0, 0, 0)
@@ -563,22 +310,8 @@ class PhiPage(PageBase):
         lay.addLayout(top2)
         lay.addLayout(top3)
         # A25.1（V2.3 §12）：结果过期横幅（参数改了但结果没重算时出现，非模态）
-        self.banner = QFrame()
-        self.banner.setObjectName("staleBanner")
-        theme.mark(self.banner, "banner")
-        self.banner.setVisible(False)
-        bh = QHBoxLayout(self.banner)
-        bh.setContentsMargins(8, 6, 8, 6)
-        self.lbl_banner = QLabel("")
-        self.lbl_banner.setWordWrap(True)
-        self.btn_banner_action = QPushButton("…")
-        self.btn_banner_hide = QPushButton("忽略")
-        self.btn_banner_hide.setToolTip("只隐藏提示；下次改参数会再次出现")
-        bh.addWidget(self.lbl_banner, 1)
-        bh.addWidget(self.btn_banner_action)
-        bh.addWidget(self.btn_banner_hide)
-        self.btn_banner_action.clicked.connect(self._on_banner_action)
-        self.btn_banner_hide.clicked.connect(self._dismiss_banner)
+        self.banner = StaleBanner()
+        self.banner.action_requested.connect(self._on_banner_action)
         lay.addWidget(self.banner)
         lay.addWidget(body, 1)
         lay.addWidget(self.progress_row())
@@ -743,7 +476,7 @@ class PhiPage(PageBase):
             self._reference_group = ""
         self.cmb_reference.blockSignals(False)
         # A 道 FR-23.1：载入后重建组页签（保持当前选中组；<2 组则整条隐藏）
-        self._rebuild_group_tabs()
+        self.group_tabs.rebuild(self._groups(), self._group_title)
 
     def _reload_dir(self) -> None:
         """重新载入：强制清空解析缓存（FR-6.8 的失效入口）。"""
@@ -772,12 +505,12 @@ class PhiPage(PageBase):
         """
         if group and dye:
             self.files.set_dye(group, dye)
-            self._refresh_group_titles()
+            self.group_tabs.refresh_titles(self._group_title)
             self.logged.emit("INFO", f"染料命名：{group} → {dye}")
             return
         # 恢复自动命名：``set_dye("", "")`` 只留一个空键，显示侧据此回落自动值
         self.files.set_dye("", "")
-        self._refresh_group_titles()
+        self.group_tabs.refresh_titles(self._group_title)
 
     def _on_remember(self, group: str, remember: bool) -> None:
         """勾/取消「记住」→ 写/删 dyes.yaml（持久化，FR-11.1）。"""
@@ -800,7 +533,7 @@ class PhiPage(PageBase):
         hook = getattr(self.dye_panel, "set_group_dye", None)
         if callable(hook):
             hook(group, dye)
-        self._refresh_group_titles()
+        self.group_tabs.refresh_titles(self._group_title)
         self.logged.emit("INFO", f"染料命名（来自文件清单）：{group} → {dye}")
 
     def _on_file_time_changed(self, name: str, t: float) -> None:
@@ -828,73 +561,11 @@ class PhiPage(PageBase):
         # 参数变化即持久化（FR-5）；不自动重跑（"显式动作"哲学）
         self.cfg = self.params.config(self.cfg)
         self.persist_cfg()
-        self._update_stale_banner()        # A25.1：让"结果已过期"可见
+        self._refresh_banner()             # A25.1：让"结果已过期"可见
 
-    # ══════════════ V2.3 §12 C 道 FR-25：交互逻辑 ══════════════
-    #: 只影响**出图**的分区（变化 → 只需重渲，不重算数值）。
-    _PLOT_LIKE = ("plot",)
-    #: 只影响**导出**、或对本页图件**无影响**的分区（变化 → 不提示过期）。
-    #: A10（V2.x 审查）：`spectra` 原来是 `_PLOT_LIKE`——那是作图台（FR-4）的参数，
-    #: Φ_Δ 的图 a 用的是 `plot.jacs.spectra_overlay`，与它无关 → 误报"仅出图参数变了"。
-    _EXPORT_ONLY = ("excel", "qc_dashboard", "spectra")
-
-    def _cfg_sections(self) -> dict:
-        """把 cfg 拆成"分区 → 内容"（排除纯 UI 会话态，避免误报过期）。"""
-        import json
-        out: dict = {}
-        for k, v in (self.cfg or {}).items():
-            if str(k).startswith("_") or k == "gui":
-                continue
-            try:
-                out[str(k)] = json.dumps(v, sort_keys=True, default=str)
-            except Exception:                              # noqa: BLE001
-                out[str(k)] = repr(v)
-        return out
-
-    def stale_sections(self) -> list:
-        """相对**上次分析**变过的分区名（无快照/无结果 → 空）。"""
-        if not self._cfg_snapshot or self._last_rr is None:
-            return []
-        old = {k: v for k, v in self._cfg_snapshot.items()}
-        now = self._cfg_sections()
-        # 快照里也按同一口径序列化，保证可比
-        snap: dict = {}
-        for k, v in old.items():
-            if str(k).startswith("_") or k == "gui":
-                continue
-            try:
-                import json
-                snap[str(k)] = json.dumps(v, sort_keys=True, default=str)
-            except Exception:                              # noqa: BLE001
-                snap[str(k)] = repr(v)
-        changed = [k for k in sorted(set(snap) | set(now))
-                   if snap.get(k) != now.get(k)]
-        return [k for k in changed if k not in self._EXPORT_ONLY]
-
-    def _flatten_jacs(self, node, prefix: str = "") -> dict:
-        """把 ``plot.jacs`` 展平成 ``{点分键: 值}``（M5 归因用）。"""
-        out: dict = {}
-        for k, v in (node or {}).items():
-            path = f"{prefix}.{k}" if prefix else str(k)
-            if isinstance(v, dict):
-                out.update(self._flatten_jacs(v, path))
-            else:
-                out[path] = repr(v)
-        return out
-
-    def stale_keys(self) -> list:
-        """``plot.jacs`` 内相对上次分析变过的**叶子键**（M5 细分用）。"""
-        if not self._cfg_snapshot or self._last_rr is None:
-            return []
-        try:
-            old = self._flatten_jacs(
-                ((self._cfg_snapshot.get("plot") or {}).get("jacs")) or {})
-            now = self._flatten_jacs(
-                ((self.cfg.get("plot") or {}).get("jacs")) or {})
-        except Exception:                              # noqa: BLE001
-            return []
-        return [k for k in sorted(set(old) | set(now))
-                if old.get(k) != now.get(k)]
+    # ══════════════ 结果过期横幅（A25.1） ══════════════
+    def _refresh_banner(self) -> None:
+        self.banner.refresh(self.cfg, has_result=self._last_rr is not None)
 
     def on_cfg_changed(self) -> None:
         """外部（模板套用/批次载入）换了 cfg 后刷新"结果过期"横幅（V2.4 FR-26.3③）。
@@ -902,56 +573,13 @@ class PhiPage(PageBase):
         只更新提示，**不自动重跑**：用户按 F5 才真正重算。
         """
         try:
-            self._update_stale_banner()
+            self._refresh_banner()
         except Exception as err:                       # noqa: BLE001 —— 横幅不得废页
             log.warning("刷新过期横幅失败：%s", err)
 
-    def _update_stale_banner(self) -> None:
-        """按"变的是哪些分区"决定横幅文案与动作（A25.1 分层重算）。"""
-        secs = self.stale_sections()
-        if not secs:
-            self._hide_banner()
-            return
-        self._banner_sections = secs
-        self._banner_keys = self.stale_keys() if "plot" in secs else []
-        only_plot = all(s in self._PLOT_LIKE for s in secs)
-        if only_plot:
-            self._banner_kind = "plot"
-            self.lbl_banner.setText(
-                "⚠ 结果已过期：仅出图参数变了（数值未变）——可只重渲受影响图，"
-                "不必重算。")
-            self.btn_banner_action.setText("重渲受影响图")
-        else:
-            self._banner_kind = "numeric"
-            numeric = [s for s in secs if s not in self._PLOT_LIKE]
-            self.lbl_banner.setText(
-                "⚠ 结果已过期：数值相关参数变了（"
-                + "、".join(numeric[:4]) + ("…" if len(numeric) > 4 else "")
-                + "）——需要重算分析。")
-            self.btn_banner_action.setText("重算分析")
-        self.banner.setVisible(True)
-
-    def _hide_banner(self) -> None:
-        self._banner_kind = ""
-        self._banner_sections = []
-        if hasattr(self, "banner"):
-            self.banner.setVisible(False)
-
-    def _dismiss_banner(self) -> None:
-        """用户点「忽略」：只隐藏（不改快照，下次再改参数仍会提示）。"""
-        if hasattr(self, "banner"):
-            self.banner.setVisible(False)
-
-    # ── 自动化契约（A25.1/A25.2 验收用） ──
-    def banner_visible(self) -> bool:
-        return bool(hasattr(self, "banner") and not self.banner.isHidden())
-
-    def banner_kind(self) -> str:
-        return self._banner_kind
-
-    def _on_banner_action(self) -> None:
+    def _on_banner_action(self, kind: str) -> None:
         """横幅按钮：仅出图参数变 → 只重渲受影响图；数值变 → 走完整重算。"""
-        if self._banner_kind == "plot":
+        if kind == "plot":
             self._rerender_affected()
         else:
             self._run()
@@ -967,10 +595,11 @@ class PhiPage(PageBase):
         if rr is None or not getattr(rr, "run_dir", None) or not rr.ok:
             self.status.emit("请先完成一次分析")
             return
-        self._cancel_fig_job()          # 先停后台补渲（同一 run_dir，不能并发写）
+        self.backfill.cancel()          # 先停后台补渲（同一 run_dir，不能并发写）
         cfg = self.params.config(self.cfg)
-        secs = self.stale_sections() or ["plot"]
-        keys = self._banner_keys or (self.stale_keys() if "plot" in secs else [])
+        secs = self.banner.sections(self.cfg) or ["plot"]
+        keys = self.banner.pending_keys or (self.banner.changed_keys(self.cfg)
+                                            if "plot" in secs else [])
         try:
             from core.render.plotting_jacs import affected_figures
             steps = affected_figures(cfg, secs, changed_keys=keys)
@@ -996,15 +625,13 @@ class PhiPage(PageBase):
         def done(made) -> None:
             figs = self._preview_pngs(rr)
             self.canvas.set_images(figs, keep_index=True)
-            if not self.group_tabs.isHidden():
-                self._on_group_tab_changed(self.group_tabs.currentIndex())
-            self._cfg_snapshot = copy.deepcopy(cfg)
-            self._hide_banner()
+            self.group_tabs.reapply()
+            self.banner.set_snapshot(cfg)
             self.logged.emit("INFO",
                              f"已重渲 {len(made)} 张受影响图件（数值未重算）")
 
         self.run_task(task, "重渲受影响图", done,
-                      busy_widgets=[self.btn_run, self.btn_banner_action])
+                      busy_widgets=[self.btn_run, self.banner.btn_action])
 
     # ── A25.3：只分析本组（不改全局勾选） ──
     def analyze_group(self, group: str) -> int:
@@ -1037,8 +664,7 @@ class PhiPage(PageBase):
         act_copy = menu.addAction("复制本行")
         act_copy.triggered.connect(lambda *_: self._copy_result_row(row))
         act_jump = menu.addAction("跳到该组页签")
-        act_jump.setEnabled(not self.group_tabs.isHidden()
-                            and len(self._group_tab_groups) > 1)
+        act_jump.setEnabled(not self.group_tabs.isHidden() and self.group_tabs.count() > 1)
         act_jump.triggered.connect(lambda *_: self._on_result_row_clicked(row))
         menu.exec(self.table.viewport().mapToGlobal(pos))
 
@@ -1053,9 +679,7 @@ class PhiPage(PageBase):
     def _on_group_tab_context_menu(self, pos) -> None:      # noqa: ANN001
         from PySide6.QtWidgets import QMenu
         idx = self.group_tabs.tabAt(pos)
-        if idx <= 0 or idx >= len(self._group_tab_groups):
-            return                                  # 「全部组（对比）」没有"本组"动作
-        gs = self._group_tab_groups[idx]
+        gs = self.group_tabs.groups_at(idx)        # 「全部组（对比）」没有"本组"动作
         if not gs:
             return
         group = next(iter(gs))
@@ -1077,30 +701,19 @@ class PhiPage(PageBase):
         flow 布局由 ``main_window`` 显式开启；classic 保持默认关闭（V1.x 外观
         一字不变）。开启后仍需 ≥2 个组才会出现页签条（FR-23.1）。
         """
-        self._group_tabs_enabled = bool(enabled)
-        if not enabled:
-            self.group_tabs.setVisible(False)
-            self.files.set_group_filter(None)
+        self.group_tabs.set_feature_enabled(enabled)
+        if enabled and self.scans:
+            self.group_tabs.rebuild(self._groups(), self._group_title)
+
+    def _apply_group_filter(self, groups) -> None:
+        """组页签选中变化：只改文件表**行可见性**与画布**可见集**，不重建任何控件。"""
+        self.files.set_group_filter(groups)
+        if groups is None:
             self.canvas.set_visible_filter(None)
-            self._group_tab_groups = []
             return
-        if self.scans:
-            self._rebuild_group_tabs()
-
-    def group_tabs_enabled(self) -> bool:
-        """组页签能力是否开启（自动化契约）。"""
-        return bool(getattr(self, "_group_tabs_enabled", False))
-
-    def group_tab_labels(self) -> list[str]:
-        """当前页签标题（测试用；未显示时返回空列表）。
-
-        注意用 ``isHidden()`` 而不是 ``isVisible()``：离屏测试/页签尚未显示时
-        ``isVisible()`` 会因祖先隐藏而恒假。
-        """
-        if self.group_tabs.isHidden():
-            return []
-        return [self.group_tabs.tabText(i)
-                for i in range(self.group_tabs.count())]
+        names = figure_names(groups, self.scans)
+        # 画布字典键是**文件名**（含扩展名），这里按 stem 比较（png/svg 都适用）
+        self.canvas.set_visible_filter(lambda n: Path(n).stem in names)
 
     def _groups(self) -> list[str]:
         """当前 scans 的组名（排序）。"""
@@ -1115,100 +728,9 @@ class PhiPage(PageBase):
             dye = group
         return group if dye == group else f"{dye} · {group}"
 
-    def _group_figure_names(self, groups: set) -> set:
-        """这些组对应的图件名集合（命名与 ``plotting_jacs`` 同源，防漂移）。"""
-        try:
-            from ui.prep.names import fig_a_names, stack_tag
-            from core.render.plotting import _safe
-        except Exception:                                  # noqa: BLE001
-            return set()
-        # A03（V2.x 审查）：原来用 `_groups()`（含已剔除/background）判"单组"，
-        # 而图 a 的命名只看**出图组**。于是"1 样品组 + 1 背景组"时图 a 实际叫
-        # `fig_a_spectra_overlay`（单组特例），组页签却按多组算 → 该图**哪个组页签
-        # 都看不见**。这里与 `_fig_a_names` 同口径：只数可出图的样品组。
-        draw_groups = sorted({str(s.group) for s in (self.scans or [])
-                              if not s.excluded
-                              and str(getattr(s, "role", "")) not in
-                              ("background", "dark")})
-        single = len(draw_groups) <= 1
-        names: set = set()
-        for g in groups:
-            if single:
-                names.update(fig_a_names([g]))
-            else:
-                names.add(f"fig_a_spectra_{_safe(g)}")
-            names.add(f"fig_b_kinetics_{_safe(g)}")
-            names.add(f"jacs_stack_{stack_tag(g)}")
-        return names
-
-    def _rebuild_group_tabs(self) -> None:
-        """按当前 scans 重建页签：``[全部组（对比）]`` + 每组一个。
-
-        组数 < 2 或能力未开启 → 整条页签条隐藏、过滤复位（界面与 V1.x 一致）。
-        """
-        groups = self._groups()
-        prev = self.group_tabs.currentIndex()
-        # A04（V2.x 审查）：原来只保留 index。重载后组集合/排序变了 → 落在**错的组**。
-        # 改为按"当前页签代表的组集合"保位；找不到就回「全部组（对比）」。
-        prev_groups = None
-        if 0 < prev < len(self._group_tab_groups):
-            prev_groups = set(self._group_tab_groups[prev] or ())
-        self.group_tabs.blockSignals(True)
-        while self.group_tabs.count():
-            self.group_tabs.removeTab(0)
-        self._group_tab_groups = [None]                     # 第 0 页 = 全部组（对比）
-        self.group_tabs.addTab("全部组（对比）")
-        for g in groups:
-            self.group_tabs.addTab(self._group_title(g))
-            self._group_tab_groups.append({g})
-        self.group_tabs.blockSignals(False)
-        show = bool(self._group_tabs_enabled) and len(groups) >= 2
-        self.group_tabs.setVisible(show)
-        if not show:
-            self.files.set_group_filter(None)
-            self.canvas.set_visible_filter(None)
-            return
-        idx = 0
-        if prev_groups:
-            for i, gs in enumerate(self._group_tab_groups):
-                if gs and set(gs) == prev_groups:
-                    idx = i
-                    break
-        idx = min(max(idx, 0), self.group_tabs.count() - 1)
-        self.group_tabs.setCurrentIndex(idx)
-        self._on_group_tab_changed(idx)
-
-    def _refresh_group_titles(self) -> None:
-        """染料命名变化后只刷新页签标题（不重建、不动选中）。"""
-        if self.group_tabs.isHidden():
-            return
-        self.group_tabs.blockSignals(True)
-        try:
-            for i in range(1, self.group_tabs.count()):
-                gs = self._group_tab_groups[i] if i < len(self._group_tab_groups) else None
-                if gs:
-                    self.group_tabs.setTabText(i, self._group_title(next(iter(gs))))
-        finally:
-            self.group_tabs.blockSignals(False)
-
-    def _on_group_tab_changed(self, idx: int) -> None:
-        """切页签：只改文件表**行可见性**与画布**可见集**，不重建任何控件。"""
-        if not self._group_tabs_enabled:
-            return
-        groups = None
-        if 0 < idx < len(self._group_tab_groups):
-            groups = self._group_tab_groups[idx]
-        self.files.set_group_filter(groups)
-        if groups is None:
-            self.canvas.set_visible_filter(None)
-        else:
-            names = self._group_figure_names(groups)
-            # 画布字典键是**文件名**（含扩展名），这里按 stem 比较（png/svg 都适用）
-            self.canvas.set_visible_filter(lambda n: Path(n).stem in names)
-
     def _on_result_row_clicked(self, row: int, _col: int = 0) -> None:
         """FR-23.6b：点结果表某行 → 切到该组的页签。"""
-        if not self._group_tabs_enabled or self.group_tabs.isHidden():
+        if not self.group_tabs.feature_enabled() or self.group_tabs.isHidden():
             return
         rr = getattr(self, "_last_rr", None)
         if rr is None or row < 0:
@@ -1216,11 +738,7 @@ class PhiPage(PageBase):
         rows = sorted((getattr(rr, "results", None) or {}).items())
         if row >= len(rows):
             return
-        group = rows[row][0]
-        for i, gs in enumerate(self._group_tab_groups):
-            if gs and group in gs:
-                self.group_tabs.setCurrentIndex(i)
-                return
+        self.group_tabs.select_group(rows[row][0])
 
     # ══════════════ 分析 ══════════════
     def _remember_reference(self) -> bool:
@@ -1294,7 +812,7 @@ class PhiPage(PageBase):
         out_root = self._out_root()
         self._last_export_mode = "preview"       # A09：本次产物档位
         self.table.setRowCount(0)
-        self._cancel_fig_job()                     # 新分析 → 旧的补渲作废
+        self.backfill.cancel()                     # 新分析 → 旧的补渲作废
         d = self.data_dir
         dye = self.dye_panel.dye_map()
         tov = dict(self._time_overrides)
@@ -1304,7 +822,7 @@ class PhiPage(PageBase):
         self.logged.emit("INFO",
                          f"预览懒渲染：先出 {'|'.join(first)}，其余后台补渲" if lazy
                          else "预览懒渲染已关：预览档一次画完整批")
-        self._update_figs_progress()
+        self.backfill.update_progress()
 
         def task(progress_cb, log_cb):
             # V2.5 A29.3：与批量队列**共用**单目录编排 helper（含 dye_batch.yaml
@@ -1329,7 +847,7 @@ class PhiPage(PageBase):
             return
         cfg = self.params.config(self.cfg)
         run_dir = Path(rr.run_dir)
-        self._cancel_fig_job()                     # 定稿整批出图 → 补渲不必再跑
+        self.backfill.cancel()                     # 定稿整批出图 → 补渲不必再跑
         self.logged.emit("INFO", "开始定稿出图（600 dpi png，不重新解析文件）…")
 
         # G13（第二轮审查）：**线程亲和**——`dye_panel.dye_map()` 读的是
@@ -1380,19 +898,16 @@ class PhiPage(PageBase):
             log.warning("结果区动作条刷新失败：%s", err)
         if getattr(rr, "ok", False):
             # A25.1：分析成功 → 记下本次用的配置；之后参数再变才算"过期"
-            self._cfg_snapshot = copy.deepcopy(self.params.config(self.cfg))
-            self._hide_banner()
+            self.banner.set_snapshot(self.params.config(self.cfg))
         self._fill_table(rr)
         if rr.run_dir:
             self.export.set_run_dir(rr.run_dir)
-            self._promised_figs = set()
-            self._steps_tried = set()      # M5：新的一轮分析 → 补渲步骤重新计
+            self.backfill.reset()          # M5：新的一轮分析 → 补渲步骤重新计
             # 预览档产物在 figures_preview/；定稿后才在 figures/
             figs = rr.figures or self._preview_pngs(rr)
             self.canvas.set_images(figs, keep_index=True)
             # A 道 FR-23.5：整批换图后重放当前组过滤（懒渲染排队占位不受影响）
-            if not self.group_tabs.isHidden():
-                self._on_group_tab_changed(self.group_tabs.currentIndex())
+            self.group_tabs.reapply()
         if not rr.ok:
             self.btn_final.setEnabled(False)
             self.logged.emit("ERROR", rr.message or "分析未产生结果")
@@ -1404,8 +919,8 @@ class PhiPage(PageBase):
         self._emit_interpretation(rr)
         if self.dye_panel.tbl_time.rowCount():
             self.dye_panel.refresh()
-        self._render_rest()                       # P1：后台补渲其余图件
-        self._update_figs_progress()
+        self.backfill.start()                       # P1：后台补渲其余图件
+        self.backfill.update_progress()
         if hasattr(self, "live_preview"):
             self._schedule_live_preview()
 
@@ -1472,11 +987,10 @@ class PhiPage(PageBase):
     # **没有任何日志**——画布刷新失败用户无从知晓。
     # 本页本来就有 `run_task` 范式（见 `_run`），照搬即可。
     #
-    # G16（第二轮审查）：两个导出都必须先过 `_jobs_busy()`。`run_task` 自己只看
-    # `self._busy`，看**不到** `_fig_job`（后台补渲）——于是导出可与补渲并行，
+    # G16（第二轮审查）：两个导出都必须先过 `backfill.busy()`。`run_task` 自己只看
+    # `self._busy`，看**不到**后台补渲——于是导出可与补渲并行，
     # 而两边都动 matplotlib 全局态（qc_dashboard 在线程里 `matplotlib.use("Agg")`
-    # + pyplot），存在 rcParams/后端竞态。`_jobs_busy()` 本来就是为此写的（:539），
-    # 定义完一直没人调。
+    # + pyplot），存在 rcParams/后端竞态。`backfill.busy()` 两者都看。
     def _export_workbook(self) -> None:
         """P5：把本次 run 汇总导出成多 sheet 工作簿（写到结果目录）——后台执行。
 
@@ -1489,7 +1003,7 @@ class PhiPage(PageBase):
         if rr is None:
             self.logged.emit("WARNING", "还没有分析结果，先点「开始分析」")
             return
-        if self._jobs_busy():
+        if self.backfill.busy():
             self.logged.emit("WARNING", "还有后台任务在跑（分析或补渲），稍候再导出")
             return
 
@@ -1514,7 +1028,7 @@ class PhiPage(PageBase):
         if not scans:
             self.logged.emit("WARNING", "没有可用数据，无法生成 QC 体检图")
             return
-        if self._jobs_busy():                       # G16：见 _export_workbook 的说明
+        if self.backfill.busy():                       # G16：见 _export_workbook 的说明
             self.logged.emit("WARNING", "还有后台任务在跑（分析或补渲），稍候再导出")
             return
         # 给目录 → 引擎自己按 cfg["qc_dashboard"]["export"] 决定文件名与格式
@@ -1559,226 +1073,10 @@ class PhiPage(PageBase):
         return sorted(fin.glob("*.png")) if fin and fin.is_dir() else []
 
     # ══════════════ 后台补渲（P1 懒渲染） ══════════════
-    def _jobs_busy(self) -> bool:
-        """是否还有本页发起的后台任务在跑（主任务或补渲）。"""
-        if self._busy:
-            return True
-        return bool(self._fig_job is not None and self._fig_job.isRunning())
 
-    def _render_rest(self) -> None:
-        """把"还没画的预览图件"排进后台任务；首图已可看，其余画完一张出现一张。"""
-        rr = self._last_rr
-        if rr is None or not rr.run_dir or not rr.ok:
-            return
-        if self._lazy_enabled() is False:
-            return                                  # 用户关掉了懒渲染 → 一次已画完
-        # A07（V2.x 审查）：`expected_figures` 返回**不带扩展名**的名字，而
-        # `_preview_pngs` 返回文件名（带 .png）——原来直接比较导致"已画出的图"
-        # 永远不匹配：日志"其余 N 张"偏大、`_promised_figs` 去重也失效。
-        # 统一按词干比较。
-        have = {p.stem for p in self._preview_pngs(rr)}
-        try:
-            from core.plotting_jacs import expected_figures
-            exp = expected_figures(rr.scans, rr.results, rr.phi, rr.cfg or self.cfg,
-                                   "preview")
-        except Exception:                           # noqa: BLE001
-            return
-        need = [n for n in exp if n not in have]
-        steps = self._remaining_steps(have, exp)
-        if not need or not steps:
-            self._update_figs_progress()
-            return
-        if self._fig_job is not None and self._fig_job.isRunning():
-            return                                  # 已有补渲在跑，不重复排
-        # 先占好"渲染中"的图位：否则补渲期间下拉里的图件数量会忽多忽少
-        extra = [n for n in need if n not in self._promised_figs]
-        if extra:
-            from core.plotting_jacs import _step_of
-            self.canvas.queued([f"{n}.png" for n in extra],
-                               steps={f"{n}.png": _step_of(n) for n in extra})
-            self._promised_figs |= set(extra)
-        self.logged.emit("INFO", f"预览档先出 {len(have)} 张；其余 {len(need)} 张"
-                                 "转入后台补渲（画完一张出现一张，不影响已出结果）")
-        job = _PreviewRenderJob(lambda p, l: None, "后台补渲", self)
-        job.configure(rr, self.params.config(self.cfg), steps,
-                      self.dye_panel.dye_map(), "preview")
-        job.wrote.connect(self._on_fig_written)
-        job.step_done.connect(self._on_fig_step_done)
-        job.progress.connect(self._on_progress)
-        job.logged.connect(self.logged)
-        job.failed.connect(self._on_failed)
-        job.done.connect(self._on_figs_done)
-        job.cancelled.connect(self._on_figs_cancelled)
-        # QThread.finished 在 done/wrote 全部投递之后才发出 → 用它做"这一轮真的画完了"
-        # 的屏障，否则末图的 wrote 可能排在 done 后面（事件队列顺序）而被漏掉
-        job.finished.connect(lambda j=job: self._figs_settle(j))
-        self._fig_job = job
-        self._last_fig_job = job          # M5：done 会清 _fig_job，收尾判断用这个
-        self._steps_tried |= set(steps)   # M5：排过就算试过（见 _remaining_steps）
-        job.start()
 
-    def _remaining_steps(self, have: set[str], exp=None) -> list[str]:
-        """还有哪些**步骤**需要补渲（按 STEP_ORDER 顺序）。
-
-        "剩余"= 该步骤**本次还没排过**，且它名下确实还有图没画出来。
-
-        M5：原来只看"哪一步没有产物文件"，于是**画不出东西的步骤永远算剩余**
-        （典型：没有参比组时图 d 一张都不产出）→ 收尾逻辑每轮都再排一个任务，
-        每次秒退、无限循环。所以两件事都要判：
-        ① ``exp``（预期清单）说明该步骤名下是否还有缺失的图位；
-        ② ``_steps_tried`` 说明该步骤是否已经排过（排过就不再重排）。
-        """
-        from core.plotting_jacs import STEP_ORDER, _step_of
-        done = {_step_of(n) for n in have}
-        names = list(exp) if exp is not None else list(have)
-        active: set = set()
-        for s in STEP_ORDER:
-            if s in done:
-                continue
-            want = [n for n in names if _step_of(n) == s]
-            if want and not any(n in have for n in want):
-                active.add(s)                # 该步骤确实还有没画出来的图
-        return [s for s in STEP_ORDER
-                if s in active and s not in self._steps_tried]
-
-    def _expected_now(self, rr) -> list:
-        """当前数据/参数下的预期图件名清单（失败 → 空表）。"""
-        try:
-            from core.plotting_jacs import expected_figures
-            return expected_figures(rr.scans, rr.results, rr.phi,
-                                    rr.cfg or self.cfg, "preview")
-        except Exception:                           # noqa: BLE001
-            return []
-
-    def pending_count(self) -> int:
-        """画布上还有多少个"渲染中"的图位（供收尾判断）。"""
-        return int(self.canvas.pending_count())
-
-    def _figs_settle(self, job=None) -> None:
-        """一轮补渲收尾：决定"继续补下一批"还是"清占位并结束"。
-
-        由 ``QThread.finished`` 触发（那时 ``wrote``/``done`` 都已投递完），因此
-        不会漏掉末图的信号。**绝不会重复补渲**：只有还存在"没试过且有内容"的
-        步骤时才续跑，否则只清占位——图 d 在无可用 Φ_Δ 时正是后者。
-
-        M5：判断"还是不是当前这一轮"**不能只看 ``job is self._fig_job``**——
-        ``done`` 信号先于 ``finished`` 投递（实测顺序 ``[done, finished]``），
-        ``_on_figs_done`` 已经把 ``_fig_job`` 置 None，于是那个判断恒真、收尾/续渲
-        永远提前返回（当前靠 wrote/step_done 信号"碰巧"覆盖清理；一旦补渲中途抛
-        异常，占位就永远留在界面上）。现在按**任务身份**判断：仍持有这个任务对象
-        即视为本轮（``_last_fig_job`` 不会被 done 清掉）。
-        """
-        if job is not None and job is not getattr(self, "_last_fig_job", None):
-            return                                # 确实换了一轮 → 本次收尾作废
-        rr = self._last_rr
-        if rr is None or not rr.run_dir:
-            return
-        have = {p.name for p in self._preview_pngs(rr)}
-        if self._remaining_steps(have, self._expected_now(rr)):
-            self._render_rest()                   # 还有步骤没试过 → 补下一批
-        else:
-            self._figs_settle_done()
-
-    def _figs_settle_done(self) -> None:
-        """真正收尾：清掉"到期没人认领"的排队位并刷新计数。"""
-        dropped = self.canvas.clear_queued()
-        n = self._update_figs_progress()
-        if dropped:
-            self.logged.emit("INFO", f"预览档共 {n} 张图件"
-                                     f"（{dropped} 个图位本次无内容，已从列表移除）")
-
-    def _on_fig_written(self, path: str) -> None:
-        """后台每画完一张就替换掉对应的"渲染中"占位。"""
-        self.canvas.mark_ready(path)
-        self._promised_figs.discard(Path(path).stem)   # A07：promised 存的是词干
-        self._update_figs_progress()
-
-    def _on_fig_step_done(self, step: str) -> None:
-        """某一步渲染完毕：收掉它名下"不会再有内容"的占位（如图 d 无可用 Φ_Δ）。"""
-        if self.canvas.resolve_step(step):
-            alive = set(self.canvas.queued_names())
-            self._promised_figs &= alive
-        self._update_figs_progress()
-
-    def _on_figs_done(self, ok) -> None:
-        self._fig_job = None
-        n = self._update_figs_progress()
-        if ok:
-            self.logged.emit("INFO", f"后台补渲结束：预览档现有 {n} 张图件"
-                                     "（「定稿出图」出 600 dpi 投稿图件）")
         # 后续动作（续补下一批 / 清占位）交给 _figs_settle，它由 QThread.finished
         # 触发——那里才是"本轮信号全部投递完毕"的可靠时点
-
-    def _on_figs_cancelled(self) -> None:
-        """补渲被取消：收掉占位、把按钮放回来（S6，别让界面卡在"渲染中"）。"""
-        self._fig_job = None
-        dropped = self.canvas.clear_queued()
-        self._promised_figs.clear()
-        self._update_figs_progress()
-        self.logged.emit("WARNING", f"后台补渲已取消（{dropped} 个未出图的占位已移除）；"
-                                    "已画好的图件不受影响，可随时再点「定稿出图」")
-
-    def _cancel_fig_job(self) -> None:
-        """取消进行中的补渲（窗口关闭或用户发起新任务时用）。
-
-        O7：``wait(3000)`` 对"单步出图"可能不够（一张 600 dpi 大图 + 多组时能超过
-        3 秒），而**超时后直接丢引用**会留下正在运行的 QThread → Qt 报
-        "QThread: Destroyed while thread is still running" 并可能崩进程。
-        这里等更久；仍不退就**保留引用**（不置 None），让它在后台自然结束——
-        宁可多留一个对象，也不能让线程被 GC 掉。
-        """
-        j = self._fig_job
-        if j is None:
-            return
-        if j.isRunning():
-            j.cancel()
-            if not j.wait(15000):
-                self.logged.emit("WARNING",
-                                 "后台补渲超时未停（已脱离页面，让它自然结束；"
-                                 "期间请勿继续操作）")
-                # A13：**脱离页面**再交给模块级强引用。只保留 self._fig_job 不够——
-                # 页面析构时 QThread 作为子对象会被一起销毁，那正是要避免的崩溃面。
-                try:
-                    j.setParent(None)
-                except (RuntimeError, AttributeError):
-                    pass
-                try:
-                    j.finished.connect(
-                        lambda jj=j: (_ORPHAN_JOBS.remove(jj)
-                                      if jj in _ORPHAN_JOBS else None))
-                except (RuntimeError, TypeError):
-                    pass
-                _ORPHAN_JOBS.append(j)
-                self._fig_job = None
-                return
-        self._fig_job = None
-
-    def _update_figs_progress(self) -> int:
-        """刷新"已出 n 张 / 共 m 张"提示，并决定「定稿出图」是否可用。"""
-        rr = self._last_rr
-        if rr is None or not rr.run_dir:
-            return 0
-        have = self._preview_pngs(rr)
-        try:
-            from core.plotting_jacs import expected_figures
-            exp = expected_figures(rr.scans, rr.results, rr.phi,
-                                   rr.cfg or self.cfg, "preview")
-        except Exception:                           # noqa: BLE001
-            exp = []
-        n, m = len(have), max(len(exp), len(have))
-        pending = self.canvas.pending_count()
-        busy = self._jobs_busy() or pending > 0
-        # 还明确有图在排队就先别放开"定稿"：图集不全也能出定稿（定稿整批重画），
-        # 但锁住一会儿能避免用户在补渲中途反复点、把两批 600 dpi 叠在一起
-        self.btn_final.setEnabled(bool(rr.ok and rr.scans and rr.run_dir and not busy))
-        self.btn_final.setToolTip(
-            ("预览图件仍在后台渲染（%d/%d，排队 %d），完成后可点此出 600 dpi 投稿图件"
-             % (n, m, pending)) if busy else
-            "用刚才的数据直接重渲 600 dpi 的 png 到 figures/（不再重新读文件）\n"
-            "产物与「直接全量跑」完全一致，是投稿用的那一份。")
-        if m:
-            self.status.emit(f"预览图件 {n}/{m}" + ("（后台渲染中…）" if busy else ""))
-        return n
 
     def _on_final_done(self, made: list) -> None:
         """定稿完成：把画布切到 figures/ 的高分辨率图件。"""
@@ -1792,7 +1090,7 @@ class PhiPage(PageBase):
             figs = sorted(d.glob("*.png")) if d and d.is_dir() else []
             if figs:
                 self.canvas.set_images(figs, keep_index=True)
-        self._update_figs_progress()
+        self.backfill.update_progress()
 
     def _emit_interpretation(self, rr) -> None:
         """把人话解读打到日志区（FR-9.3；只复述已有结果，不新增判断）。
@@ -1928,10 +1226,7 @@ class PhiPage(PageBase):
 
     def shutdown(self) -> None:
         """退出前收尾：停掉主任务与后台补渲线程。"""
-        self._cancel_fig_job()
+        self.backfill.cancel()
         super().shutdown()
 
 
-def orphan_render_jobs() -> list:
-    """仍在跑但已脱离页面的补渲线程（A13；测试/审计用）。"""
-    return list(_ORPHAN_JOBS)

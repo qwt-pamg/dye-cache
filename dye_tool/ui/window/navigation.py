@@ -10,9 +10,9 @@ from PySide6.QtGui import QAction
 from PySide6.QtGui import QKeySequence
 from PySide6.QtGui import QShortcut
 from PySide6.QtWidgets import QMessageBox
-from ui.shell.window_parts import SHORTCUT_GROUPS
+from ui.window.parts import SHORTCUT_GROUPS
 
-log = logging.getLogger("dye_tool.ui.main_window")
+log = logging.getLogger("dye_tool.ui.window.main_window")
 
 class MainWindowNavMixin:
     def _on_nav(self, key: str) -> None:
@@ -55,7 +55,7 @@ class MainWindowNavMixin:
     # ══════════════ V2.6 FR-40.3：快捷键可发现性 ══════════════
     def _init_nav_shortcuts(self) -> None:
         """Alt+1..6 切页 + 导航项 tooltip 标注（flow 布局）。"""
-        from ui.shell import NAV_ITEMS
+        from ui.window.nav import NAV_ITEMS
         nav_keys = [key for key, _label, _tip in NAV_ITEMS]
         self._nav_shortcuts: list = []
         for i, key in enumerate(nav_keys, 1):
@@ -66,7 +66,7 @@ class MainWindowNavMixin:
 
     def _apply_nav_shortcut_tips(self) -> None:
         """导航项 tooltip 标注 Alt+1..6（批次徽标刷新后也重贴一次）。"""
-        from ui.shell import NAV_ITEMS
+        from ui.window.nav import NAV_ITEMS
         hint = "导航快捷键：Alt+1 主页 / Alt+2 ①数据 / Alt+3 ②分析 / " \
                "Alt+4 ③图件 / Alt+5 ④档案 / Alt+6 ⑤设置"
         nav = getattr(self, "nav", None)

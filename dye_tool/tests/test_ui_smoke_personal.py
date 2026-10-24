@@ -61,7 +61,7 @@ def _destroy(app, widget) -> None:
 def _window(qt_app, tmp_path, monkeypatch, *, nav: str = "flow"):
     monkeypatch.setenv("DYE_TOOL_CONFIG", str(tmp_path / f"cfg_{nav}.yaml"))
     from core.config import default_config
-    from ui.main_window import MainWindow
+    from ui.window.main_window import MainWindow
 
     cfg = default_config()
     cfg.setdefault("gui", {})
@@ -100,7 +100,7 @@ def test_task_cards_and_shortcuts(qt_app, tmp_path, monkeypatch):
     from PySide6.QtGui import QShortcut
 
     from core.config import default_config
-    from ui.shell.analysis_page import TASKS, AnalysisPage
+    from ui.pages.analysis import TASKS, AnalysisPage
 
     monkeypatch.setenv("DYE_TOOL_CONFIG", str(tmp_path / "c.yaml"))
     page = AnalysisPage(default_config())

@@ -16,7 +16,7 @@ from PySide6.QtWidgets import QListWidgetItem
 from PySide6.QtWidgets import QPushButton
 from PySide6.QtWidgets import QVBoxLayout
 from PySide6.QtWidgets import QWidget
-from ui.pages.base_page import PageBase
+from ui.pages.base import PageBase
 
 log = logging.getLogger("dye_tool.ui.analysis")
 from core.paths import resolve_out_root

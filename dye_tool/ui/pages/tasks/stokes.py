@@ -32,7 +32,7 @@ from core.report.stokes_table import fmt_wavenumber
 from core.report.stokes_table import group_from_path
 from core.report.stokes_table import row_from_spectra
 from core.report.stokes_table import write_stokes_csv
-from ui.pages.base_page import PageBase
+from ui.pages.base import PageBase
 from ui import theme
 
 log = logging.getLogger("dye_tool.ui.analysis")

@@ -1,4 +1,4 @@
-"""② 分析页壳：任务卡片注册表 + 壳页装配（V2.8 FR-48 拆分后）"""
+"""② 分析页：左侧任务卡片列表 + 右侧嵌入的任务页（Φ_Δ、对比与 :mod:`ui.pages.tasks` 各卡）。"""
 
 from __future__ import annotations
 
@@ -18,21 +18,19 @@ from PySide6.QtWidgets import QSplitter
 from PySide6.QtWidgets import QStackedWidget
 from PySide6.QtWidgets import QVBoxLayout
 from PySide6.QtWidgets import QWidget
-from ui.pages.compare_page import ComparePage
-from ui.pages.phi_page import PhiPage
-from ui.shell.cards.extinction import ExtinctionPanel
-from ui.shell.cards.peaks import PeaksPanel
-from ui.shell.cards.photophysics import PhotophysicsPanel
-from ui.shell.cards.queue import BatchQueuePanel
-from ui.shell.cards.stokes import StokesPanel
-from ui.shell.cards.wavelength import WavelengthPanel
-from ui.shell.cards.common import (_INVALID_BG, _ParamTable,
-                                   _mark_param_cell)
+from ui.pages.compare import ComparePage
+from ui.pages.phi import PhiPage
+from ui.pages.tasks.extinction import ExtinctionPanel
+from ui.pages.tasks.peaks import PeaksPanel
+from ui.pages.tasks.photophysics import PhotophysicsPanel
+from ui.pages.tasks.queue import BatchQueuePanel
+from ui.pages.tasks.stokes import StokesPanel
+from ui.pages.tasks.wavelength import WavelengthPanel
 from ui import theme
 
 log = logging.getLogger("dye_tool.ui.analysis")
 
-__all__ = ["TASKS", "AnalysisPage", "ExtinctionPanel", "WavelengthPanel", "StokesPanel", "PhotophysicsPanel", "PeaksPanel", "BatchQueuePanel", "_ParamTable", "_mark_param_cell", "_INVALID_BG"]
+__all__ = ["TASKS", "AnalysisPage"]
 
 #: 任务卡片：``(key, 名称, 一句话, 需要的输入)``
 TASKS: tuple = (

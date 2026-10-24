@@ -99,7 +99,7 @@ def test_install_app_help_handles_dynamic_controls(qt_app):
 
 def test_photophysics_fields_and_labels_have_specific_help(qt_app):
     from ui.help_texts import install_app_help
-    from ui.shell.cards.photophysics import PhotophysicsPanel
+    from ui.pages.tasks.photophysics import PhotophysicsPanel
     p = PhotophysicsPanel(default_config())
     try:
         install_app_help(p)

@@ -18,9 +18,9 @@ from PySide6.QtWidgets import QTableWidgetItem
 from PySide6.QtWidgets import QVBoxLayout
 from PySide6.QtWidgets import QWidget
 from core.paths import app_root
-from ui.pages.base_page import PageBase
-from ui.pages.phi_page import ResultActions
-from ui.shell.cards.common import _ParamTable, _mark_param_cell
+from ui.pages.base import PageBase
+from ui.widgets.result_actions import ResultActions
+from ui.pages.tasks.common import _ParamTable, _mark_param_cell
 from ui import theme
 
 log = logging.getLogger("dye_tool.ui.analysis")

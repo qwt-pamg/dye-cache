@@ -23,14 +23,14 @@ from PySide6.QtWidgets import QVBoxLayout
 from core.config import default_config
 from core.synthetic import make_synthetic
 from core.synthetic import self_test
-from ui.pages.base_page import ErrorDialog
+from ui.pages.base import ErrorDialog
 from ui.widgets.export_bar import open_folder
 from ui.widgets.log_view import LogView
 from ui.workers import Job
 from ui import theme
-from ui.shell.window_parts import ABOUT_TEXT, FAQ_TEXT, MIN_WINDOW_H, MIN_WINDOW_W, NAMING_HELP, PREF_WINDOW_H, PREF_WINDOW_W, PROJECT_ROOT, WINDOW_SCREEN_MARGIN
+from ui.window.parts import ABOUT_TEXT, FAQ_TEXT, MIN_WINDOW_H, MIN_WINDOW_W, NAMING_HELP, PREF_WINDOW_H, PREF_WINDOW_W, PROJECT_ROOT, WINDOW_SCREEN_MARGIN
 
-log = logging.getLogger("dye_tool.ui.main_window")
+log = logging.getLogger("dye_tool.ui.window.main_window")
 
 class MainWindowActionsMixin:
     def _build_dock(self) -> None:

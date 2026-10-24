@@ -176,7 +176,7 @@ def _gui_smoke(argv: list[str]) -> int:
 
     def _window():
         from core.config import default_config
-        from ui.main_window import MainWindow
+        from ui.window.main_window import MainWindow
         w = MainWindow(default_config())
         w.show()
         for _ in range(10):
@@ -355,7 +355,7 @@ def _write_smoke(lines: list[str], ok: bool, argv: list[str]) -> int:
 def _install_excepthook(app=None) -> None:
     """任何未捕获异常弹窗显示 traceback + 复制按钮（设计文档 §7）。"""
     from PySide6.QtWidgets import QMessageBox
-    from ui.pages.base_page import ErrorDialog
+    from ui.pages.base import ErrorDialog
 
     def hook(exc_type, exc, tb):
         if issubclass(exc_type, KeyboardInterrupt):
@@ -440,7 +440,7 @@ def main(argv=None) -> int:
         except Exception as err:                      # noqa: BLE001
             log.warning("首次写出默认配置失败: %s", err)
 
-    from ui.main_window import MainWindow
+    from ui.window.main_window import MainWindow
     win = MainWindow(cfg)
     win.show()
     log.info("dye_tool v%s 界面已启动 (frozen=%s)", VERSION,

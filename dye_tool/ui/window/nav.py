@@ -19,7 +19,17 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QListWidget,
                                QListWidgetItem, QVBoxLayout, QWidget)
 
-from . import NAV_ITEMS
+__all__ = ["NAV_ITEMS", "NavBar", "NavBadgeRow"]
+
+#: 导航项：``(key, 显示名, 一句话说明)``。顺序 = 用户做实验的顺序。
+NAV_ITEMS: tuple = (
+    ("home", "主页", "从这里开始：最近批次、一键演示、命名速查"),
+    ("data", "① 数据", "批次工作区：导入 → 整定 → QC 体检"),
+    ("analysis", "② 分析", "Φ_Δ / 动力学对比 / ε / A@λ"),
+    ("plot", "③ 图件", "堆叠、叠加、荧光与紫外常规作图"),
+    ("archive", "④ 档案", "染料库、历史 run、结果直达"),
+    ("settings", "⑤ 设置", "参数、配置校验、目录整理"),
+)
 
 
 class NavBar(QWidget):

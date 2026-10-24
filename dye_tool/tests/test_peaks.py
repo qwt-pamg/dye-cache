@@ -158,7 +158,7 @@ def _pump_until(app, cond, seconds: float = 60.0) -> bool:
 def test_a43_panel_job_busy_result(qt_app):
     """V27-O1：②峰分析真实后台 Job——忙禁用、完成后峰表/导出可用。"""
     from core.config import default_config
-    from ui.shell.analysis_page import PeaksPanel
+    from ui.pages.tasks.peaks import PeaksPanel
 
     cfg = default_config()
     panel = PeaksPanel(cfg)
@@ -189,7 +189,7 @@ def test_a43_panel_job_cancel_restores_ui(qt_app, tmp_path, monkeypatch):
 
     import numpy as np
     from core.config import default_config
-    from ui.shell.analysis_page import PeaksPanel
+    from ui.pages.tasks.peaks import PeaksPanel
 
     def slow_collect(_d, _cfg):
         time.sleep(1.0)

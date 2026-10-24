@@ -20,8 +20,8 @@ from core.config import autogroup_cfg
 from core.grouping import auto_group, items_from_scans
 from core.io import collect_scans
 from core.pipeline import run_workbench
-from ui.pages.base_page import PageBase
-from ui.pages.phi_page import ResultActions
+from ui.pages.base import PageBase
+from ui.widgets.result_actions import ResultActions
 from ui.widgets.export_bar import ExportBar
 from ui.widgets.mpl_canvas import CanvasPanel
 from ui import theme

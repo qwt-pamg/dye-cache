@@ -56,7 +56,7 @@ def test_enabled_hover_uses_static_help(qt_app, monkeypatch):
 def test_extinction_reason_state_machine(qt_app, tmp_path):
     from core.config import default_config
     from ui.help_texts import resolve_help
-    from ui.shell.cards.extinction import ExtinctionPanel
+    from ui.pages.tasks.extinction import ExtinctionPanel
     p = ExtinctionPanel(default_config())
     try:
         btn = p.btn_run

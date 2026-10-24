@@ -669,8 +669,8 @@ def run_directory(data_dir, cfg: dict, *, only_paths=None, out_root=None,
                   phi_ref: Optional[float] = None) -> "RunResult":
     """**单目录完整运行编排**（V2.5 FR-29.2 / A29.3 同源 helper）。
 
-    GUI 的分析页（``ui.pages.phi_page.PhiPage``）与批量队列
-    （``ui.shell.analysis_page.BatchQueuePanel``）**共用这一处**，防止"队列一套
+    GUI 的分析页（``ui.pages.phi.PhiPage``）与批量队列
+    （``ui.pages.analysis.BatchQueuePanel``）**共用这一处**，防止"队列一套
     载入逻辑、手动一套"的口径漂移（设计文档 Q-D4 / 风险表"单目录口径漂移"）。
 
     与 :func:`run_phi_pipeline` 的唯一区别：``batch=None`` 时**从目录自动加载**

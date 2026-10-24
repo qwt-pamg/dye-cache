@@ -32,7 +32,7 @@ from PySide6.QtWidgets import QWidget
 from core.paths import app_root
 from core.paths import resolve_out_root
 from core.report.stokes_table import group_from_path
-from ui.pages.base_page import PageBase
+from ui.pages.base import PageBase
 from ui.widgets.live_plot import LivePlotCanvas
 
 log = logging.getLogger("dye_tool.ui.analysis")

@@ -6,7 +6,6 @@ import logging
 
 from PySide6.QtCore import QEvent
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor
 from PySide6.QtGui import QKeySequence
 from PySide6.QtWidgets import QAbstractItemView
 from PySide6.QtWidgets import QTableWidget
@@ -15,8 +14,6 @@ from ui import theme
 
 log = logging.getLogger("dye_tool.ui.analysis")
 
-#: 旧名保留给 analysis_page 的再导出；实际底色按当前主题取（theme.color("danger_bg")）
-_INVALID_BG = QColor("#FDECEC")
 
 
 def _mark_param_cell(item: QTableWidgetItem, reason: str) -> None:

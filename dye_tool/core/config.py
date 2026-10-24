@@ -147,7 +147,7 @@ DEFAULT_CFG: dict = {
             "lazy_preview": True,        # P1 预览懒渲染：首批只画首图，其余后台补渲
             # V2.0 FR-16：导航布局。flow=任务流新导航（默认）| classic=V1.x 平铺五页签
             # （经典模式保留一个版本周期，Q7；该键纳入 DS1 全树校验的 KNOWN_PATHS）。
-            # 注意：本键**只有 GUI 读**（ui/main_window.py），CLI/数值层忽略它。
+            # 注意：本键**只有 GUI 读**（ui/window/main_window.py），CLI/数值层忽略它。
             # V2.3 FR-24.8：窗口几何记忆（0 = 未设置 → 用默认 1560×960）；关窗时写回。
             "window": {"w": 0, "h": 0, "x": 0, "y": 0},
             "nav": "flow",
