@@ -1,4 +1,4 @@
-"""② 斯托克斯位移任务卡（V2.6 FR-41）"""
+"""② 斯托克斯位移任务卡（V2.6 FR-41）：选吸收谱 → 选发射谱 → 结果与对比。"""
 
 from __future__ import annotations
 
@@ -7,22 +7,13 @@ import logging
 import math
 from pathlib import Path
 from typing import Optional
+
+import numpy as np
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QAbstractItemView
-from PySide6.QtWidgets import QComboBox
-from PySide6.QtWidgets import QFileDialog
-from PySide6.QtWidgets import QGroupBox
-from PySide6.QtWidgets import QHBoxLayout
-from PySide6.QtWidgets import QHeaderView
-from PySide6.QtWidgets import QLabel
-from PySide6.QtWidgets import QListWidget
-from PySide6.QtWidgets import QListWidgetItem
-from PySide6.QtWidgets import QPushButton
-from PySide6.QtWidgets import QSplitter
-from PySide6.QtWidgets import QTableWidget
-from PySide6.QtWidgets import QTableWidgetItem
-from PySide6.QtWidgets import QVBoxLayout
-from PySide6.QtWidgets import QWidget
+from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QFileDialog, QGroupBox,
+                               QHBoxLayout, QHeaderView, QLabel, QListWidget,
+                               QListWidgetItem, QPushButton, QSplitter, QTableWidget,
+                               QTableWidgetItem, QVBoxLayout, QWidget)
 from core.paths import resolve_out_root
 from core.report.stokes_table import STOKES_COLUMNS
 from core.report.stokes_table import default_stokes_name
@@ -32,9 +23,23 @@ from core.report.stokes_table import group_from_path
 from core.report.stokes_table import row_from_spectra
 from core.report.stokes_table import write_stokes_csv
 from ui.pages.base import PageBase
+from ui.widgets.batch_tree import GROUP_COLORS
+from ui.widgets.flow_bar import STEP_DONE, STEP_TODO, FlowBar
+from ui.widgets.live_plot import LivePlotCanvas
+from ui.widgets.step_inspector import StepInspector, three_columns
+from ui.widgets.verdict import VerdictCard
 from ui import theme
 
 log = logging.getLogger("dye_tool.ui.analysis")
+
+#: 流程条三步；检查器第 i 页、:meth:`StokesPanel._step_summary` 都按这个顺序
+STEPS = ("选吸收谱", "选发射谱", "结果与对比")
+STEP_HINTS = (
+    "先选光谱目录，再点一支吸收谱；单选，点另一支就替换",
+    "点一支发射谱；两支都选好，上方结论条即时给出位移",
+    "确认无误后点「加入对比表」；不会自动入表。对比表只留在本次会话，要留存请导出 CSV",
+)
+
 
 class StokesPanel(PageBase):
     """V2.6 FR-41：斯托克斯位移一对一测量 + 跨组对比表（会话级台账）。
@@ -95,76 +100,56 @@ class StokesPanel(PageBase):
         self._preview: dict = {}
         self._build()
 
+    # ══════════════ 构建 ══════════════
     def _build(self) -> None:
+        """混搭布局：流程条（挂到分析页顶栏）/ 中栏结论条 + 配对预览 + 对比表 · 右栏检查器。"""
+        self.flow_bar = FlowBar(STEPS)
+        self.flow_bar.step_clicked.connect(self._go_step)
+        center = self._build_center_column()
+        inspector = self._build_inspector()
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
-        lay.addWidget(self.header())
-        bar = QHBoxLayout()
-        self.btn_dir = QPushButton("选择光谱目录…")
-        self.lbl_dir = QLabel("未选择目录")
-        theme.mark(self.lbl_dir, "muted")
-        bar.addWidget(self.btn_dir)
-        bar.addWidget(self.lbl_dir, 1)
-        lay.addLayout(bar)
-        hint = QLabel(
-            "每次只选一对：左侧吸收谱 + 右侧发射谱各一支（单选，点击第二个即替换）；"
-            "未选齐时「加入对比表」禁用，也不会自动配对/自动入表。")
-        hint.setWordWrap(True)
-        theme.mark(hint, "hint")
-        lay.addWidget(hint)
+        lay.setSpacing(6)
+        lay.addWidget(three_columns(None, center, inspector), 1)
+        lay.addWidget(self.progress_row())
 
-        self.lst_abs = QListWidget()
-        self.lst_abs.setObjectName("stokesAbsList")
-        self.lst_em = QListWidget()
-        self.lst_em.setObjectName("stokesEmList")
-        for lst in (self.lst_abs, self.lst_em):
-            lst.setSelectionMode(QAbstractItemView.SingleSelection)
-            lst.setAlternatingRowColors(True)
-        split = QSplitter(Qt.Horizontal)
-        for lst, title in ((self.lst_abs, "吸收谱（kind=abs）"),
-                           (self.lst_em, "发射谱（kind=em）")):
-            box = QGroupBox(title)
-            vb = QVBoxLayout(box)
-            vb.addWidget(lst)
-            split.addWidget(box)
-        split.setSizes([400, 400])
-        lay.addWidget(split, 2)
+        self.btn_dir.clicked.connect(self._choose_dir)
+        self.btn_add.clicked.connect(self._add_row)
+        self.btn_delete.clicked.connect(self._delete_selected)
+        self.btn_clear.clicked.connect(self.clear_rows)
+        self.btn_export.clicked.connect(lambda: self.export_csv())
+        self.cmb_group_filter.currentIndexChanged.connect(
+            self._on_group_filter_changed)
+        self.lst_abs.currentRowChanged.connect(self._update_preview)
+        self.lst_em.currentRowChanged.connect(self._update_preview)
+        self._go_step(0)
+        self._update_preview()
 
-        preview_row = QHBoxLayout()
-        self.lbl_abs = QLabel("λabs = —")
-        self.lbl_em = QLabel("λem = —")
-        self.lbl_dlam = QLabel("Δλ = —")
-        self.lbl_dnu = QLabel("Δν̃ = —")
-        for lbl in (self.lbl_abs, self.lbl_em, self.lbl_dlam, self.lbl_dnu):
-            theme.mark(lbl, "strong")
-            preview_row.addWidget(lbl)
-        preview_row.addStretch(1)
-        lay.addLayout(preview_row)
-        self.lbl_preview = QLabel("未选齐：请各选一支吸收谱与发射谱")
-        self.lbl_preview.setWordWrap(True)
-        theme.mark(self.lbl_preview, "muted")
-        lay.addWidget(self.lbl_preview)
+    def top_bar_widget(self) -> QWidget:
+        """分析页顶部细条插槽的约定：交出流程条（同一对象，切走时会还回来）。"""
+        return self.flow_bar
 
-        row = QHBoxLayout()
-        self.btn_add = QPushButton("加入对比表")
-        self.btn_add.setEnabled(False)
+    def _build_center_column(self) -> QWidget:
+        """中栏：结论条 / 这一对谱的预览图 / 跨组对比表（含过滤、删除、导出）。"""
+        self.verdict = VerdictCard()
+
+        self.plot = LivePlotCanvas(figsize=(6.0, 3.0), dpi=90)
+        self.plot.lbl_hint.setText("两支谱各自归一化；虚线是取到的峰位")
+        box_plot = QGroupBox("这一对谱")
+        lp = QVBoxLayout(box_plot)
+        lp.addWidget(self.plot)
+
+        tools = QHBoxLayout()
+        tools.addWidget(QLabel("组过滤"))
+        self.cmb_group_filter = QComboBox()
+        self.cmb_group_filter.addItem("全部组")
+        tools.addWidget(self.cmb_group_filter)
+        tools.addStretch(1)
         self.btn_delete = QPushButton("删除选中")
         self.btn_clear = QPushButton("清空")
         self.btn_export = QPushButton("导出 CSV…")
-        row.addWidget(self.btn_add)
-        row.addWidget(self.btn_delete)
-        row.addWidget(self.btn_clear)
-        row.addStretch(1)
-        row.addWidget(self.btn_export)
-        lay.addLayout(row)
-
-        filt = QHBoxLayout()
-        filt.addWidget(QLabel("组过滤"))
-        self.cmb_group_filter = QComboBox()
-        self.cmb_group_filter.addItem("全部组")
-        filt.addWidget(self.cmb_group_filter)
-        filt.addStretch(1)
-        lay.addLayout(filt)
+        for b in (self.btn_delete, self.btn_clear, self.btn_export):
+            tools.addWidget(b)
 
         self.tbl = QTableWidget(0, len(self.COLUMNS))
         self.tbl.setObjectName("stokesTable")
@@ -189,23 +174,187 @@ class StokesPanel(PageBase):
         hdr.setSortIndicatorShown(False)
         self.tbl.setSortingEnabled(False)
         self.tbl.itemChanged.connect(self._on_item_changed)
-        lay.addWidget(self.tbl, 2)
-
         self.lbl_csv = QLabel("导出：—")
         self.lbl_csv.setWordWrap(True)
         theme.mark(self.lbl_csv, "hint")
-        lay.addWidget(self.lbl_csv)
-        lay.addWidget(self.progress_row())
+        box_res = QGroupBox("跨组对比表（本次会话；组别可双击改）")
+        lr = QVBoxLayout(box_res)
+        lr.addLayout(tools)
+        lr.addWidget(self.tbl, 1)
+        lr.addWidget(self.lbl_csv)
 
-        self.btn_dir.clicked.connect(self._choose_dir)
-        self.btn_add.clicked.connect(self._add_row)
-        self.btn_delete.clicked.connect(self._delete_selected)
-        self.btn_clear.clicked.connect(self.clear_rows)
-        self.btn_export.clicked.connect(lambda: self.export_csv())
-        self.cmb_group_filter.currentIndexChanged.connect(
-            self._on_group_filter_changed)
-        self.lst_abs.currentRowChanged.connect(self._update_preview)
-        self.lst_em.currentRowChanged.connect(self._update_preview)
+        split = QSplitter(Qt.Vertical)
+        split.addWidget(box_plot)
+        split.addWidget(box_res)
+        split.setChildrenCollapsible(False)
+        split.setSizes([340, 300])
+
+        center = QWidget()
+        lay = QVBoxLayout(center)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(6)
+        lay.addWidget(self.verdict)
+        lay.addWidget(split, 1)
+        center.setMinimumWidth(380)
+        return center
+
+    def _build_inspector(self) -> QWidget:
+        """右栏检查器：① 目录 + 吸收谱列表 ② 发射谱列表 ③ 读数；主按钮「加入对比表」。"""
+        self.lst_abs = QListWidget()
+        self.lst_abs.setObjectName("stokesAbsList")
+        self.lst_em = QListWidget()
+        self.lst_em.setObjectName("stokesEmList")
+        for lst in (self.lst_abs, self.lst_em):
+            lst.setSelectionMode(QAbstractItemView.SingleSelection)
+            lst.setAlternatingRowColors(True)
+
+        # ① 选吸收谱
+        self.btn_dir = QPushButton("选择光谱目录…")
+        self.lbl_dir = QLabel("未选择目录")
+        theme.mark(self.lbl_dir, "muted")
+        self.lbl_dir.setWordWrap(True)
+        self.lbl_pick_abs = QLabel("")
+        theme.mark(self.lbl_pick_abs, "hint")
+        self.lbl_pick_abs.setWordWrap(True)
+        p_abs = QWidget()
+        la = QVBoxLayout(p_abs)
+        la.setContentsMargins(0, 0, 0, 0)
+        la.addWidget(self.btn_dir, 0, Qt.AlignLeft)
+        la.addWidget(self.lbl_dir)
+        la.addWidget(self.lst_abs, 1)
+        la.addWidget(self.lbl_pick_abs)
+        # ② 选发射谱
+        self.lbl_pick_em = QLabel("")
+        theme.mark(self.lbl_pick_em, "hint")
+        self.lbl_pick_em.setWordWrap(True)
+        p_em = QWidget()
+        le = QVBoxLayout(p_em)
+        le.setContentsMargins(0, 0, 0, 0)
+        le.addWidget(self.lst_em, 1)
+        le.addWidget(self.lbl_pick_em)
+        # ③ 结果与对比：四个读数 + 能否计算的说明
+        self.lbl_abs = QLabel("λabs = —")
+        self.lbl_em = QLabel("λem = —")
+        self.lbl_dlam = QLabel("Δλ = —")
+        self.lbl_dnu = QLabel("Δν̃ = —")
+        p_res = QWidget()
+        lv = QVBoxLayout(p_res)
+        lv.setContentsMargins(0, 0, 0, 0)
+        for lbl in (self.lbl_abs, self.lbl_em, self.lbl_dlam, self.lbl_dnu):
+            theme.mark(lbl, "strong")
+            lv.addWidget(lbl)
+        self.lbl_preview = QLabel("未选齐：请各选一支吸收谱与发射谱")
+        self.lbl_preview.setWordWrap(True)
+        theme.mark(self.lbl_preview, "muted")
+        lv.addWidget(self.lbl_preview)
+        lv.addStretch(1)
+
+        self.btn_add = QPushButton("加入对比表")
+        theme.mark(self.btn_add, "primary")
+        self.btn_add.setToolTip("把这一对的结果记一行到下方对比表（不会自动入表）")
+        self.btn_add.setEnabled(False)
+
+        ins = StepInspector(STEPS, STEP_HINTS)
+        for i, w in enumerate((p_abs, p_em, p_res)):
+            ins.set_page(i, w)
+        ins.add_action(self.btn_add)
+        ins.step_requested.connect(self._go_step)
+        ins.set_summary_provider(self._step_summary)
+        self.inspector = ins
+        return ins
+
+    # ══════════════ 流程条 / 结论条 ══════════════
+    def _go_step(self, idx: int) -> None:
+        """切到第 idx 步：流程条高亮、检查器换页（中栏的预览与对比表一直在）。"""
+        idx = max(0, min(len(STEPS) - 1, int(idx)))
+        self.flow_bar.set_current(idx)
+        self.inspector.set_current(idx)
+
+    @staticmethod
+    def _pick_text(s, lam) -> str:
+        return "" if s is None else f"{Path(str(s.path)).name} · 峰 {fmt_nm(lam)} nm"
+
+    def _step_summary(self, idx: int) -> str:
+        """某一步当前状态的一行摘要（只读已有状态）。"""
+        a, e = self.selected_pair()
+        if idx == 0:
+            if not self.spectra:
+                return "还没选光谱目录"
+            return (self._pick_text(a, self._preview.get("lam_abs")) if a is not None
+                    else f"还没选（共 {len(self._abs)} 支）")
+        if idx == 1:
+            if not self.spectra:
+                return "还没选光谱目录"
+            return (self._pick_text(e, self._preview.get("lam_em")) if e is not None
+                    else f"还没选（共 {len(self._em)} 支）")
+        return f"对比表 {len(self._rows)} 行" if self._rows else "对比表还是空的"
+
+    def _update_flow(self) -> None:
+        """三步的完成标记：选了吸收谱 / 选了发射谱 / 对比表有记录。"""
+        a, e = self.selected_pair()
+        for i, done in enumerate((a is not None, e is not None, bool(self._rows))):
+            self.flow_bar.set_state(i, STEP_DONE if done else STEP_TODO)
+        self.inspector.refresh_summaries()
+
+    def _verdict_groups(self) -> list:
+        """对比表里各组最近一行的 Δλ（结论条右侧）。"""
+        latest: dict = {}
+        for row in self._rows:
+            latest[str(row.group)] = row
+        return [{"name": g, "sub": f"Δλ {fmt_nm(r.delta_lambda)} nm",
+                 "color": GROUP_COLORS[i % len(GROUP_COLORS)]}
+                for i, (g, r) in enumerate(latest.items())]
+
+    def _update_verdict(self) -> None:
+        """结论条：大数 = Δλ（nm），一句话 = 这一对谱，说明行 = Δν̃ 与两个峰位。"""
+        a, e = self.selected_pair()
+        if a is None or e is None:
+            self.verdict.set_empty(
+                "还没选齐一对谱",
+                "在右侧各选一支吸收谱和发射谱，这里即时给出斯托克斯位移" if self.spectra
+                else "先选光谱目录，再各选一支吸收谱和发射谱")
+            return
+        pair = f"{Path(str(a.path)).name} × {Path(str(e.path)).name}"
+        pv = self.preview_values()
+        row = row_from_spectra(a, e)
+        reason = self._row_reason(row)
+        if reason:
+            self.verdict.set_failed(f"{pair}：算不出斯托克斯位移", reason)
+            return
+        lines = [f"Δν̃ = {fmt_wavenumber(pv['delta_wavenumber'])} cm⁻¹",
+                 f"吸收峰 {fmt_nm(pv['lam_abs'])} nm → 发射峰 {fmt_nm(pv['lam_em'])} nm"]
+        lines.append(f"对比表已有 {len(self._rows)} 行" if self._rows
+                     else "点「加入对比表」把这一对记下来")
+        self.verdict.set_verdict(label=f"Δλ · {row.group}",
+                                 value=fmt_nm(pv["delta_lambda"]), error="nm",
+                                 headline=pair, lines=lines,
+                                 groups=self._verdict_groups())
+
+    def _draw_pair(self) -> None:
+        """预览图：选中的吸收/发射谱各自归一化叠画，峰位画竖虚线（只显示，不改数值）。"""
+        curves = []
+        for s, key, name, color, lam_key in (
+                (self._pick_list(self.lst_abs, self._abs), "abs", "吸收", "#1f4e79", "lam_abs"),
+                (self._pick_list(self.lst_em, self._em), "em", "发射", "#C81E1E", "lam_em")):
+            if s is None or getattr(s, "wl", None) is None:
+                continue
+            y = np.asarray(s.y, float)
+            top = float(np.nanmax(np.abs(y))) if np.isfinite(y).any() else 0.0
+            curves.append({"key": key, "label": f"{name}：{Path(str(s.path)).name}",
+                           "x": np.asarray(s.wl, float), "y": y / top if top > 0 else y,
+                           "color": color})
+            lam = float(self._preview.get(lam_key, float("nan")))
+            if math.isfinite(lam):
+                curves.append({"key": f"{key}_peak", "label": f"{name}峰 {fmt_nm(lam)} nm",
+                               "x": [lam, lam], "y": [0.0, 1.05], "color": color})
+        if not curves:
+            self.plot.clear()
+            return
+        self.plot.set_panels([{"xlabel": "波长 / nm", "ylabel": "归一化强度",
+                               "curves": curves}])
+        for key in ("abs_peak", "em_peak"):
+            if key in self.plot.curve_keys():
+                self.plot.set_style(key, linestyle="--", linewidth=0.9)
 
     # ── 载入（FR-41.1：与③作图台同一加载器 / 同一 kind 判定） ──
     def set_data_dir(self, data_dir: Path | str, *, force: bool = False) -> None:
@@ -327,6 +476,8 @@ class StokesPanel(PageBase):
         self.lbl_dlam.setText(f"Δλ = {fmt_nm(self._preview['delta_lambda'])} nm")
         self.lbl_dnu.setText(
             f"Δν̃ = {fmt_wavenumber(self._preview['delta_wavenumber'])} cm⁻¹")
+        # 算得出来时四个读数已在上面，这行只在缺谱或算不出时出现
+        self.lbl_preview.setVisible(bool(reason))
         if reason:
             self.lbl_preview.setText(f"不可计算：{reason}")
         else:
@@ -336,6 +487,15 @@ class StokesPanel(PageBase):
                 f"Δλ={fmt_nm(self._preview['delta_lambda'])} nm　"
                 f"Δν̃={fmt_wavenumber(self._preview['delta_wavenumber'])} cm⁻¹")
         self.btn_add.setEnabled(a is not None and e is not None)
+        self.lbl_pick_abs.setText(
+            f"已选：{self._pick_text(a, self._preview['lam_abs'])}" if a is not None
+            else "还没选吸收谱")
+        self.lbl_pick_em.setText(
+            f"已选：{self._pick_text(e, self._preview['lam_em'])}" if e is not None
+            else "还没选发射谱")
+        self._draw_pair()
+        self._update_verdict()
+        self._update_flow()
 
     @staticmethod
     def _row_reason(row) -> str:
@@ -424,6 +584,8 @@ class StokesPanel(PageBase):
         finally:
             self._filling = False
         self._refresh_filter_combo()
+        self._update_verdict()
+        self._update_flow()
 
     def _refresh_filter_combo(self) -> None:
         groups = sorted({str(r.group) for r in self._rows})
@@ -460,6 +622,7 @@ class StokesPanel(PageBase):
         if text != row.group:
             row.group = text
             self._refresh_filter_combo()
+            self._update_verdict()
             self.status.emit(f"已改组别为「{text}」")
             self.logged.emit("INFO", f"对比表组别改为「{text}」")
 
@@ -631,10 +794,8 @@ class StokesPanel(PageBase):
             finally:
                 lst.blockSignals(False)
         self._update_preview()
+        self._go_step(len(STEPS) - 1)
         self.status.emit(f"已预填配对：{Path(str(abs_path)).name} × "
                          f"{Path(str(em_path)).name}（点「加入对比表」确认）")
         return True
 
-
-# ═══════════════════ V2.6 G 道：光物理表征（FR-42/43/44） ═══════════════════
-#: FR-44 表征总表列（唯一来源 = core/report/characterization.py；未落地时兜底同序）

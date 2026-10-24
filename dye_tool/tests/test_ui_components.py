@@ -220,7 +220,9 @@ def test_photophysics_bleach_csv_flows_into_char_table(qt_app, tmp_path):
     from ui.pages.tasks.photophysics import PhotophysicsPanel
     p = PhotophysicsPanel(default_config())
     try:
-        assert [p.tabs.tabText(i) for i in range(p.tabs.count())] == ["量子产率 φ", "光漂白", "表征总表"]
+        from ui.pages.tasks.photophysics.panel import STEPS
+        assert STEPS == ("量子产率 φ", "光漂白", "表征总表")
+        assert [p.center_stack.widget(i) for i in range(3)] == [p.tab_phi, p.tab_bleach, p.tab_char]
         p.set_default_dir(tmp_path)
         assert p.tab_phi.lbl_phi_dir.text() == str(tmp_path)
         assert p.tab_bleach.lbl_bleach_dir.text() == str(tmp_path)
@@ -234,7 +236,8 @@ def test_photophysics_bleach_csv_flows_into_char_table(qt_app, tmp_path):
         res = bleach.compute_bleach()
         assert res.get("ok"), res
         assert bleach.add_bleach_to_table()
-        assert p.tabs.currentWidget() is p.tab_char        # 入表后切到总表
+        assert p.center_stack.currentWidget() is p.tab_char  # 入表后切到总表
+        assert p.flow_bar.current() == 2 and p.verdict.value_text() == "1"
         rows = p.rows()
         assert len(rows) == 1 and rows[0]["k_photo"] == pytest.approx(k, rel=0.05)
 

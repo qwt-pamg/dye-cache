@@ -7,30 +7,28 @@ import logging
 from pathlib import Path
 from typing import Optional
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QAbstractItemView
-from PySide6.QtWidgets import QComboBox
-from PySide6.QtWidgets import QFileDialog
-from PySide6.QtWidgets import QHBoxLayout
-from PySide6.QtWidgets import QHeaderView
-from PySide6.QtWidgets import QLabel
-from PySide6.QtWidgets import QPushButton
-from PySide6.QtWidgets import QTableWidget
-from PySide6.QtWidgets import QTableWidgetItem
-from PySide6.QtWidgets import QVBoxLayout
-from PySide6.QtWidgets import QWidget
+from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QFileDialog, QFormLayout,
+                               QGroupBox, QHBoxLayout, QHeaderView, QLabel, QPushButton,
+                               QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
 from core.paths import resolve_out_root
+from core.render import photophysics
+from core.report import characterization
+from core.report.characterization import CHARACTERIZATION_COLUMNS
+from ui.widgets.batch_tree import GROUP_COLORS
 
 from ui import theme
 
-from .common import (_CHAR_COLUMNS_FALLBACK, _CHAR_KEYS, _CHAR_NUMERIC_KEYS, _CHAR_FMT,
-                     _as_float, _finite, _fmt_num, _load_optional, _empty_char_row,
-                     photo_out_path)
+from .common import (_CHAR_KEYS, _CHAR_NUMERIC_KEYS, _CHAR_FMT, _as_float, _finite,
+                     _fmt_num, _empty_char_row, photo_out_path)
 
 log = logging.getLogger("dye_tool.ui.analysis")
 
 
 class CharacterizationTab(QWidget):
-    """表征总表子页（会话级台账）。"""
+    """表征总表这一步（会话级台账）：中栏 = 表 + 导出；检查器 = 筛选与删行。
+
+    本控件自身是中栏内容；:attr:`settings` 是检查器页，:attr:`primary_actions` 是检查器主按钮。
+    """
 
     def __init__(self, panel) -> None:
         super().__init__()
@@ -48,46 +46,29 @@ class CharacterizationTab(QWidget):
         self._build()
 
     def _build(self) -> None:
+        self._build_center()
+        self._build_settings()
+        self.btn_char_import = QPushButton("从斯托克斯表导入")
+        theme.mark(self.btn_char_import, "primary")
+        self.btn_char_import.setToolTip("把「斯托克斯位移」任务对比表里的行加进来，编辑后统一导出")
+        self.primary_actions = self.btn_char_import
+
+        self.btn_char_delete.clicked.connect(lambda *_: self.delete_selected_rows())
+        self.btn_char_clear.clicked.connect(lambda *_: self.clear_rows())
+        self.btn_char_import.clicked.connect(lambda *_: self.import_stokes_rows())
+        self.btn_char_csv.clicked.connect(lambda *_: self.export_csv())
+        self.btn_char_xlsx.clicked.connect(lambda *_: self.export_xlsx())
+        self.btn_char_figure.clicked.connect(lambda *_: self.export_bar_figure())
+        self.cmb_filter_condition.currentIndexChanged.connect(
+            lambda *_: self._refresh_char_view())
+        self.cmb_filter_compound.currentIndexChanged.connect(
+            lambda *_: self._refresh_char_view())
+
+    def _build_center(self) -> None:
+        """中栏：表征总表（可编辑、点表头排序）+ 导出行。"""
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(8, 8, 8, 8)
-        hint = QLabel("行 = 化合物 × 条件；缺项留空可编辑。与 Stokes 表同一模块"
-                      "（core/report/characterization.py），可导入 Stokes 行后统一导出。")
-        hint.setWordWrap(True)
-        theme.mark(hint, "hint")
-        lay.addWidget(hint)
-
-        filt = QHBoxLayout()
-        filt.addWidget(QLabel("条件过滤"))
-        self.cmb_filter_condition = QComboBox()
-        self.cmb_filter_condition.addItem("全部", "")
-        filt.addWidget(self.cmb_filter_condition)
-        filt.addWidget(QLabel("化合物过滤"))
-        self.cmb_filter_compound = QComboBox()
-        self.cmb_filter_compound.addItem("全部", "")
-        filt.addWidget(self.cmb_filter_compound)
-        filt.addStretch(1)
-        lay.addLayout(filt)
-
-        row = QHBoxLayout()
-        self.btn_char_delete = QPushButton("删除选中")
-        self.btn_char_clear = QPushButton("清空")
-        self.btn_char_import = QPushButton("从 Stokes 表导入")
-        self.btn_char_csv = QPushButton("导出 CSV…")
-        self.btn_char_xlsx = QPushButton("导出 Excel…")
-        self.btn_char_figure = QPushButton("导出柱状图…")
-        self.btn_char_figure.setToolTip("用 core/render/photophysics 的新图型出口（未落地时提示暂不可用）")
-        for b in (self.btn_char_delete, self.btn_char_clear,
-                  self.btn_char_import, self.btn_char_csv,
-                  self.btn_char_xlsx, self.btn_char_figure):
-            row.addWidget(b)
-        row.addStretch(1)
-        lay.addLayout(row)
-
-        try:
-            cols = list(_load_optional(
-                "core.report.characterization").CHARACTERIZATION_COLUMNS)
-        except Exception:                              # noqa: BLE001 —— G 核心未落地
-            cols = list(_CHAR_COLUMNS_FALLBACK)
+        lay.setContentsMargins(0, 0, 0, 0)
+        cols = list(CHARACTERIZATION_COLUMNS)
         self._columns = cols
         self.tbl = QTableWidget(0, len(cols))
         self.tbl.setObjectName("charTable")
@@ -108,23 +89,54 @@ class CharacterizationTab(QWidget):
         self.tbl.setColumnWidth(2, 150)
         self.tbl.setColumnWidth(3, 150)
         self.tbl.itemChanged.connect(self._on_char_item_changed)
-        lay.addWidget(self.tbl, 1)
+        box = QGroupBox("表征总表（行 = 化合物 × 条件；双击单元格可改）")
+        lb = QVBoxLayout(box)
+        lb.addWidget(self.tbl, 1)
+        lay.addWidget(box, 1)
+
+        box_out = QGroupBox("导出")
+        lo = QVBoxLayout(box_out)
+        row = QHBoxLayout()
+        self.btn_char_csv = QPushButton("导出 CSV…")
+        self.btn_char_xlsx = QPushButton("导出 Excel…")
+        self.btn_char_figure = QPushButton("导出柱状图…")
+        self.btn_char_figure.setToolTip("把 φ / 亮度 / ε / k_photo 按化合物画成分组柱状图")
+        for b in (self.btn_char_csv, self.btn_char_xlsx, self.btn_char_figure):
+            row.addWidget(b)
+        row.addStretch(1)
+        lo.addLayout(row)
         self.lbl_char_export = QLabel("导出：—")
         self.lbl_char_export.setWordWrap(True)
         theme.mark(self.lbl_char_export, "hint")
-        lay.addWidget(self.lbl_char_export)
+        lo.addWidget(self.lbl_char_export)
+        lay.addWidget(box_out)
 
-        self.btn_char_delete.clicked.connect(lambda *_: self.delete_selected_rows())
-        self.btn_char_clear.clicked.connect(lambda *_: self.clear_rows())
-        self.btn_char_import.clicked.connect(lambda *_: self.import_stokes_rows())
-        self.btn_char_csv.clicked.connect(lambda *_: self.export_csv())
-        self.btn_char_xlsx.clicked.connect(lambda *_: self.export_xlsx())
-        self.btn_char_figure.clicked.connect(lambda *_: self.export_bar_figure())
-        self.cmb_filter_condition.currentIndexChanged.connect(
-            lambda *_: self._refresh_char_view())
-        self.cmb_filter_compound.currentIndexChanged.connect(
-            lambda *_: self._refresh_char_view())
-        self._rebuild_char_table()
+    def _build_settings(self) -> None:
+        """检查器页：只看某个条件/化合物 + 删行与清空。"""
+        self.settings = QWidget()
+        lay = QVBoxLayout(self.settings)
+        lay.setContentsMargins(0, 0, 0, 0)
+        hint = QLabel("缺的数值留空即可，之后可以在表里补。"
+                      "和斯托克斯对比表用的是同一套列，导入后能一起导出。")
+        hint.setWordWrap(True)
+        theme.mark(hint, "hint")
+        lay.addWidget(hint)
+        form = QFormLayout()
+        self.cmb_filter_condition = QComboBox()
+        self.cmb_filter_condition.addItem("全部", "")
+        self.cmb_filter_compound = QComboBox()
+        self.cmb_filter_compound.addItem("全部", "")
+        form.addRow("只看条件", self.cmb_filter_condition)
+        form.addRow("只看化合物", self.cmb_filter_compound)
+        lay.addLayout(form)
+        row = QHBoxLayout()
+        self.btn_char_delete = QPushButton("删除选中")
+        self.btn_char_clear = QPushButton("清空")
+        row.addWidget(self.btn_char_delete)
+        row.addWidget(self.btn_char_clear)
+        row.addStretch(1)
+        lay.addLayout(row)
+        lay.addStretch(1)
 
     def _bar_payload(self):
         """表征总表 → (groups, series)（分组柱状图数据；缺列自动跳过）。"""
@@ -183,8 +195,6 @@ class CharacterizationTab(QWidget):
 
     def _rebuild_char_table(self) -> None:
         """按 过滤 + 排序 重建表格视图（纯视图级：不改行序/编辑值）。"""
-        if not hasattr(self, "tbl"):
-            return
         view = [i for i, r in enumerate(self._rows)
                 if (not self._filter_condition
                     or str(r.get("condition") or "") == self._filter_condition)
@@ -216,6 +226,7 @@ class CharacterizationTab(QWidget):
                     self.tbl.setItem(row_i, col, it)
         finally:
             self._filling = False
+        self.panel.refresh()
 
     def _refresh_char_view(self) -> None:
         self._filter_condition = self.cmb_filter_condition.currentData() or ""
@@ -253,6 +264,7 @@ class CharacterizationTab(QWidget):
         else:
             self._rows[src][key] = text
         self._update_char_filters()
+        self.panel.refresh()
 
     def _on_char_header_clicked(self, col: int) -> None:
         if not (0 <= col < len(_CHAR_KEYS)):
@@ -340,48 +352,25 @@ class CharacterizationTab(QWidget):
         return added
 
     def _char_row_objects(self) -> list:
-        """转成 characterization.CharacterizationRow（缺模块时退 dict）。"""
-        try:
-            mod = _load_optional("core.report.characterization")
-            make = getattr(mod, "make_characterization_row", None) \
-                or getattr(mod, "make_row", None)
-            if callable(make):
-                out = []
-                for r in self._rows:
-                    fields = {k: r.get(k) for k in _CHAR_KEYS
-                              if r.get(k) is not None and r.get(k) != ""}
-                    out.append(make(**fields))
-                return out
-        except Exception as err:                       # noqa: BLE001
-            log.warning("表征行对象构造失败（退 dict 导出）：%s", err)
-        return [dict(r) for r in self._rows]
+        """转成 characterization.CharacterizationRow（导出用）。"""
+        out = []
+        for r in self._rows:
+            fields = {k: r.get(k) for k in _CHAR_KEYS
+                      if r.get(k) is not None and r.get(k) != ""}
+            out.append(characterization.make_characterization_row(**fields))
+        return out
 
     def _char_default_path(self, suffix: str) -> Path:
-        out_root = resolve_out_root(self.panel.cfg)
-        try:
-            mod = _load_optional("core.report.characterization")
-            name = (mod.default_characterization_name()
-                    if suffix == ".csv" else
-                    str(mod.default_characterization_name()).replace(".csv", ".xlsx"))
-        except Exception:                              # noqa: BLE001
-            import datetime as _dt
-            name = f"characterization_{_dt.datetime.now():%H%M%S}{suffix}"
-        return out_root / name
+        name = characterization.default_characterization_name()
+        if suffix != ".csv":
+            name = str(name).replace(".csv", suffix)
+        return resolve_out_root(self.panel.cfg) / name
 
     def export_csv(self, path=None):
         """导出表征总表 CSV（UTF-8-SIG / 中文列名 / 空表不产文件）。"""
         if not self._rows:
             self.panel.status.emit("表征总表为空：未导出 CSV（未生成文件）")
             self.panel.logged.emit("WARNING", "表征总表为空，未导出 CSV")
-            return None
-        try:
-            mod = _load_optional("core.report.characterization")
-            writer = getattr(mod, "write_characterization_csv", None)
-        except Exception:                              # noqa: BLE001
-            writer = None
-        if not callable(writer):
-            self.panel.status.emit("核心模块 core.report.characterization 尚未落地：CSV 导出暂不可用")
-            self.panel.logged.emit("WARNING", "表征 CSV 导出失败：core 模块缺失")
             return None
         if path is None:
             default = self._char_default_path(".csv")
@@ -390,7 +379,7 @@ class CharacterizationTab(QWidget):
             if not path:
                 return None
         try:
-            got = writer(self._char_row_objects(), path)
+            got = characterization.write_characterization_csv(self._char_row_objects(), path)
         except Exception as err:                       # noqa: BLE001
             self.panel.status.emit(f"导出 CSV 失败：{err}")
             self.panel.logged.emit("ERROR", f"表征 CSV 导出失败：{err}")
@@ -409,16 +398,6 @@ class CharacterizationTab(QWidget):
         if not self._rows:
             self.panel.status.emit("表征总表为空：未导出 Excel")
             return None
-        try:
-            mod = _load_optional("core.report.characterization")
-            writer = (getattr(mod, "write_characterization_xlsx", None)
-                      or getattr(mod, "write_characterization_excel", None))
-        except Exception:                              # noqa: BLE001
-            writer = None
-        if not callable(writer):
-            self.panel.status.emit("核心模块 core.report.characterization 尚未落地：Excel 导出暂不可用")
-            self.panel.logged.emit("WARNING", "表征 Excel 导出失败：core 模块缺失")
-            return None
         if path is None:
             default = self._char_default_path(".xlsx")
             path, _ = QFileDialog.getSaveFileName(
@@ -427,14 +406,8 @@ class CharacterizationTab(QWidget):
             if not path:
                 return None
         try:
-            got = writer(self._char_row_objects(), path, cfg=self.panel.cfg)
-        except TypeError:
-            try:
-                got = writer(self._char_row_objects(), path)
-            except Exception as err:                   # noqa: BLE001
-                self.panel.status.emit(f"导出 Excel 失败：{err}")
-                self.panel.logged.emit("ERROR", f"表征 Excel 导出失败：{err}")
-                return None
+            got = characterization.write_characterization_xlsx(
+                self._char_row_objects(), path, cfg=self.panel.cfg)
         except Exception as err:                       # noqa: BLE001
             self.panel.status.emit(f"导出 Excel 失败：{err}")
             self.panel.logged.emit("ERROR", f"表征 Excel 导出失败：{err}")
@@ -454,25 +427,9 @@ class CharacterizationTab(QWidget):
         if not groups or not series:
             self.panel.status.emit("表征总表为空（或没有可画的数值列）：无法导出柱状图")
             return None
-        try:
-            mod = _load_optional("core.render.photophysics")
-            fn = getattr(mod, "plot_grouped_bars")
-        except Exception:                              # noqa: BLE001 —— G-C 未落地
-            msg = ("core/render/photophysics 尚未落地：柱状图导出暂不可用"
-                   "（表征表 CSV/Excel 导出不受影响）")
-            self.panel.status.emit(msg)
-            self.panel.logged.emit("WARNING", msg)
-            return None
         out_path = photo_out_path(self.panel.cfg, "bars")
         try:
-            got = fn(groups, series, out_path, cfg=self.panel.cfg)
-        except TypeError:
-            try:
-                got = fn(groups, series, out_path)
-            except Exception as err:                   # noqa: BLE001
-                self.panel.status.emit(f"柱状图导出失败：{err}")
-                self.panel.logged.emit("ERROR", f"柱状图导出失败：{err}")
-                return None
+            got = photophysics.plot_grouped_bars(groups, series, out_path, cfg=self.panel.cfg)
         except Exception as err:                       # noqa: BLE001
             self.panel.status.emit(f"柱状图导出失败：{err}")
             self.panel.logged.emit("ERROR", f"柱状图导出失败：{err}")
@@ -481,3 +438,42 @@ class CharacterizationTab(QWidget):
             self.panel.status.emit(f"已导出分组柱状图：{got}")
             self.panel.logged.emit("INFO", f"光物理表征：分组柱状图已导出 {got}")
         return got
+
+    # ── 工作台：摘要 / 结论条 ──
+    def summary(self) -> str:
+        """检查器里这一步折叠后的一行摘要。"""
+        if not self._rows:
+            return "还是空的"
+        shown = len(self._view)
+        return (f"{len(self._rows)} 行" if shown == len(self._rows)
+                else f"{len(self._rows)} 行 · 正在看 {shown} 行")
+
+    def fill_verdict(self, card) -> None:
+        """结论条：大数 = 行数，一句话 = 化合物 × 条件，说明行 = 各列填了多少。"""
+        rows = self._rows
+        if not rows:
+            card.set_empty("表征总表还是空的",
+                           "在「量子产率 φ」或「光漂白」这一步点「加入表征表」，"
+                           "或从斯托克斯表导入")
+            return
+        compounds = list(dict.fromkeys(str(r.get("compound") or "").strip() or "未命名"
+                                       for r in rows))
+        conds = {str(r.get("condition") or "").strip() for r in rows} - {""}
+        n_phi = sum(1 for r in rows if _finite(r.get("phi")))
+        n_k = sum(1 for r in rows if _finite(r.get("k_photo")))
+        n_stokes = sum(1 for r in rows if _finite(r.get("delta_lambda")))
+        lines = [f"有 φ 的 {n_phi} 行 · 有光漂白 k 的 {n_k} 行 · 有 Δλ 的 {n_stokes} 行"]
+        if len(self._view) != len(rows):
+            lines.append(f"按筛选正在看 {len(self._view)} 行")
+        groups = []
+        for j, name in enumerate(compounds):
+            mine = [r for r in rows
+                    if (str(r.get("compound") or "").strip() or "未命名") == name]
+            phi = next((r.get("phi") for r in mine if _finite(r.get("phi"))), None)
+            groups.append({"name": name,
+                           "sub": f"φ {_as_float(phi):.3g}" if phi is not None
+                           else f"{len(mine)} 行",
+                           "color": GROUP_COLORS[j % len(GROUP_COLORS)]})
+        card.set_verdict(label="表征总表", value=str(len(rows)), error="行",
+                         headline=f"{len(compounds)} 个化合物 × {max(1, len(conds))} 个条件",
+                         lines=lines, groups=groups)
