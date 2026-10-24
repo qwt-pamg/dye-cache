@@ -13,7 +13,7 @@
 """
 from __future__ import annotations
 
-from typing import Optional
+from typing import Callable, Optional
 
 from PySide6.QtGui import QColor, QGuiApplication, QPalette
 from PySide6.QtWidgets import QApplication, QWidget
@@ -23,23 +23,23 @@ THEME_LABELS = {"light": "浅色", "dark": "深色", "system": "跟随系统"}
 
 PALETTES: dict[str, dict[str, str]] = {
     "light": {
-        "bg": "#f5f6f8", "surface": "#ffffff", "surface_alt": "#f0f2f5",
-        "nav_bg": "#eceff3", "border": "#dcdfe4", "border_strong": "#c3c8d0",
-        "text": "#1f2328", "text_muted": "#57606a", "text_subtle": "#8a929c",
-        "accent": "#2563eb", "accent_hover": "#1d4ed8", "accent_text": "#ffffff",
-        "accent_soft": "#e6eefc",
-        "warn": "#b45309", "warn_bg": "#fff4e5", "warn_border": "#f0b429",
-        "danger": "#c81e1e", "danger_bg": "#fdecec", "success": "#1a7f37",
+        "bg": "#f1f4f3", "surface": "#ffffff", "surface_alt": "#eef2f1",
+        "nav_bg": "#e9eeed", "rail_bg": "#1e2524", "rail_text": "#a9b5b3", "border": "#d5dddb", "border_strong": "#bcc7c4",
+        "text": "#15201f", "text_muted": "#5e6b69", "text_subtle": "#87938f",
+        "accent": "#0b7a6e", "accent_hover": "#096659", "accent_text": "#ffffff",
+        "accent_soft": "#ddf1ee", "series_ref": "#c2410c",
+        "warn": "#9a5b00", "warn_bg": "#fbefd6", "warn_border": "#e7b85a",
+        "danger": "#c81e1e", "danger_bg": "#fdecec", "success": "#1d7a46",
         "modified_bg": "#fff7e0", "hit_bg": "#fff3a0",
     },
     "dark": {
-        "bg": "#17191e", "surface": "#1f2229", "surface_alt": "#272b33",
-        "nav_bg": "#1b1e24", "border": "#343a45", "border_strong": "#4a5161",
-        "text": "#e4e7eb", "text_muted": "#a7afba", "text_subtle": "#737c88",
-        "accent": "#4c8dff", "accent_hover": "#6ea2ff", "accent_text": "#0d1526",
-        "accent_soft": "#1e2c47",
-        "warn": "#f0a54a", "warn_bg": "#3a2b14", "warn_border": "#8a5d17",
-        "danger": "#ff6b6b", "danger_bg": "#3d1d1f", "success": "#4ac26b",
+        "bg": "#0e1312", "surface": "#151b1a", "surface_alt": "#1b2221",
+        "nav_bg": "#121817", "rail_bg": "#090c0c", "rail_text": "#8fa09d", "border": "#283433", "border_strong": "#3a4a47",
+        "text": "#e1ece9", "text_muted": "#93a6a2", "text_subtle": "#6c7d79",
+        "accent": "#3cc3b2", "accent_hover": "#5fd3c4", "accent_text": "#062420",
+        "accent_soft": "#173a36", "series_ref": "#fb8a4c",
+        "warn": "#f2b35b", "warn_bg": "#3a2c12", "warn_border": "#8a5d17",
+        "danger": "#ff6b6b", "danger_bg": "#3d1d1f", "success": "#5fcb8c",
         "modified_bg": "#3b3418", "hit_bg": "#5c4d00",
     },
 }
@@ -47,6 +47,23 @@ PALETTES: dict[str, dict[str, str]] = {
 MONO_FONTS = '"Cascadia Mono", Consolas, Menlo, "DejaVu Sans Mono", monospace'
 
 _current = "light"
+_applied = False
+
+#: 组件自带的 QSS 片段：``fn(palette) -> str``，拼在全局 QSS 之后
+_EXTRA_QSS: list[Callable[[dict[str, str]], str]] = []
+
+
+def register_qss(fn: Callable[[dict[str, str]], str]) -> Callable[[dict[str, str]], str]:
+    """登记组件自己的 QSS（模块导入时调用，可当装饰器）。
+
+    新组件把样式写在自己的模块里，不必改这个文件；主题已装上时立即重装一次。
+    """
+    if fn not in _EXTRA_QSS:
+        _EXTRA_QSS.append(fn)
+        app = QApplication.instance()
+        if _applied and app is not None:
+            app.setStyleSheet(stylesheet(_current))
+    return fn
 
 
 def resolve(mode: Optional[str]) -> str:
@@ -273,12 +290,12 @@ QFrame[role="banner"] {{ background: {p['warn_bg']}; border: 1px solid {p['warn_
 QFrame[role="card"] {{ background: {p['surface']}; border: 1px solid {p['border']};
                       border-radius: 8px; }}
 *[role="plain"] {{ border: none; background: transparent; }}
-"""
+""" + "".join(fn(p) for fn in _EXTRA_QSS)
 
 
 def apply(mode: Optional[str] = None, app: Optional[QApplication] = None) -> str:
     """把主题装到整个应用（Fusion 风格 + 色板 + 全局 QSS），返回实际色板名。"""
-    global _current
+    global _current, _applied
     app = app or QApplication.instance()
     _current = resolve(mode)
     if app is None:
@@ -287,4 +304,5 @@ def apply(mode: Optional[str] = None, app: Optional[QApplication] = None) -> str
         app.setStyle("Fusion")
     app.setPalette(_palette(PALETTES[_current]))
     app.setStyleSheet(stylesheet(_current))
+    _applied = True
     return _current
