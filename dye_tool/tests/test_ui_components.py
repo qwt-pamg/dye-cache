@@ -66,7 +66,7 @@ def test_stale_banner_numeric_change_requires_rerun_and_ignores_export_and_gui(q
 
 # ═══════════════════════ figure_names ═══════════════════════
 def test_figure_names_single_vs_multi_draw_groups():
-    from ui.pages.phi.batch_tree import figure_names
+    from ui.pages.phi.figures import figure_names
     s = lambda g, role="sample": SimpleNamespace(group=g, role=role, excluded="")  # noqa: E731
     multi = figure_names({"g1"}, [s("g1"), s("g2")])
     assert any(n.startswith("fig_a_spectra_") for n in multi)

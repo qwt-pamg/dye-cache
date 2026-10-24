@@ -24,34 +24,24 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox,
 from core.io import collect_scans
 from core.pipeline import rerender_figures, run_directory
 from ui.pages.base import PageBase
+from ui.widgets.batch_tree import BatchTree
 from ui.widgets.dye_time_panel import DyeTimePanel
 from ui.widgets.export_bar import ExportBar, open_folder
 from ui.widgets.file_table import ROLE_ZH, FileTable
+from ui.widgets.flow_bar import STEP_DONE, STEP_STALE, STEP_TODO, FlowBar
 from ui.widgets.mpl_canvas import CanvasPanel
 from ui.widgets.param_panel import ParamPanel
 from ui.widgets.result_actions import ResultActions
+from ui.widgets.step_inspector import StepInspector, three_columns
+from ui.widgets.verdict import VerdictCard
 from .backfill import FigureBackfill
-from .batch_tree import BatchTree, figure_names
-from .flow_bar import STEP_DONE, STEP_STALE, STEP_TODO, FlowBar
+from .figures import figure_names
 from .settings_panel import UnifiedSettingsPanel
 from .stale import StaleBanner
-from .verdict import VerdictCard
 from ui import theme
 
 log = logging.getLogger("dye_tool.ui.phi")
 
-
-@theme.register_qss
-def _qss(p: dict) -> str:
-    """检查器底部「其余步摘要」：像链接行，不像按钮。"""
-    return f"""
-QFrame#phiInspector {{ background: {p['surface']}; border: 1px solid {p['border']};
-                      border-radius: 8px; }}
-QPushButton#phiStepSummary {{ text-align: left; border: none; border-top: 1px solid {p['border']};
-                             border-radius: 0; background: transparent; padding: 6px 2px;
-                             color: {p['text_muted']}; }}
-QPushButton#phiStepSummary:hover {{ color: {p['accent']}; }}
-"""
 
 RESULT_HEADERS = ["组别", "角色", "k ± σk (s⁻¹)", "R²", "n", "A(0)",
                   "Φ_Δ ± σ", "状态 / 备注"]
@@ -389,66 +379,19 @@ class PhiPage(PageBase):
         lfg.addLayout(live)
         lfg.addWidget(self.btn_final)
 
-        self.inspector_stack = QStackedWidget()
-        for w in (p_import, self.dye_panel, scroll_p, p_phi, p_fig):
-            self.inspector_stack.addWidget(w)
-
-        self.lbl_step = QLabel("")
-        theme.mark(self.lbl_step, "strong")
-        self.lbl_step_hint = QLabel("")
-        theme.mark(self.lbl_step_hint, "hint")
-        self.lbl_step_hint.setWordWrap(True)
-
-        # 其余步的一行摘要（点一下跳过去）
-        self.step_summaries: list[QPushButton] = []
-        sums = QVBoxLayout()
-        sums.setSpacing(2)
-        for i, name in enumerate(STEPS):
-            b = QPushButton()
-            b.setObjectName("phiStepSummary")
-            b.setFlat(True)
-            b.setCursor(Qt.PointingHandCursor)
-            b.setToolTip(f"切到「{name}」这一步")
-            b.clicked.connect(lambda _=False, i=i: self._go_step(i))
-            self.step_summaries.append(b)
-            sums.addWidget(b)
-
-        self.btn_prev = QPushButton("←")
-        self.btn_prev.setToolTip("回到上一步")
-        self.btn_prev.clicked.connect(lambda: self._go_step(self.flow_bar.current() - 1))
-        self.btn_next = QPushButton("下一步 →")
-        self.btn_next.setToolTip("去下一步")
-        self.btn_next.clicked.connect(lambda: self._go_step(self.flow_bar.current() + 1))
-        nav = QHBoxLayout()
-        nav.addWidget(self.btn_prev)
-        nav.addWidget(self.btn_next, 1)
-
-        ins = QFrame()
-        ins.setObjectName("phiInspector")
-        lay = QVBoxLayout(ins)
-        lay.setContentsMargins(10, 10, 10, 10)
-        lay.setSpacing(8)
-        lay.addWidget(self.lbl_step)
-        lay.addWidget(self.lbl_step_hint)
-        lay.addWidget(self.inspector_stack, 1)
-        lay.addLayout(sums)
-        lay.addWidget(self.btn_run)
-        lay.addLayout(nav)
-        ins.setMinimumWidth(300)
-        ins.setMaximumWidth(360)
+        ins = StepInspector(STEPS, STEP_HINTS)
+        for i, w in enumerate((p_import, self.dye_panel, scroll_p, p_phi, p_fig)):
+            ins.set_page(i, w)
+        ins.add_action(self.btn_run)
+        ins.step_requested.connect(self._go_step)
+        ins.set_summary_provider(self._step_summary)
+        self.inspector = ins
+        self.inspector_stack = ins.stack
         return ins
 
     def _build_body(self, left: QWidget, center: QWidget, inspector: QWidget) -> QSplitter:
         """三栏 splitter；窄窗口时批次树默认收起（:meth:`_apply_responsive_layout`）。"""
-        body = QSplitter(Qt.Horizontal)
-        body.addWidget(left)
-        body.addWidget(center)
-        body.addWidget(inspector)
-        body.setChildrenCollapsible(False)
-        body.setStretchFactor(0, 0)
-        body.setStretchFactor(1, 1)
-        body.setStretchFactor(2, 0)
-        body.setSizes([230, 600, 320])
+        body = three_columns(left, center, inspector)
         self._tree_col = left
         self._center = center
         self._inspector = inspector
@@ -464,19 +407,9 @@ class PhiPage(PageBase):
         if idx and not self.flow_bar.step_enabled(idx):
             idx = 0
         self.flow_bar.set_current(idx)
-        self.inspector_stack.setCurrentIndex(idx)
         self.center_stack.setCurrentIndex(0 if idx < 2 else 1)
-        self.lbl_step.setText(f"第 {idx + 1} 步 · {STEPS[idx]}")
-        self.lbl_step_hint.setText(STEP_HINTS[idx])
-        self.btn_prev.setVisible(idx > 0)
-        if idx > 0:
-            self.btn_prev.setText(f"← {STEPS[idx - 1]}")
-        last = idx >= len(STEPS) - 1
-        self.btn_next.setVisible(not last)
-        if not last:
-            self.btn_next.setText(f"下一步：{STEPS[idx + 1]} →")
-            self.btn_next.setEnabled(self.flow_bar.step_enabled(idx + 1))
-        self._refresh_summaries()
+        nxt = idx + 1 < len(STEPS) and self.flow_bar.step_enabled(idx + 1)
+        self.inspector.set_current(idx, next_enabled=nxt)
 
     def _step_summary(self, idx: int) -> str:
         """某一步当前设置的一行摘要（只读已有状态）。"""
@@ -499,10 +432,7 @@ class PhiPage(PageBase):
         return f"{mode} · 格式 {self.params.ed_formats.text() or 'png'}"
 
     def _refresh_summaries(self) -> None:
-        cur = self.flow_bar.current()
-        for i, b in enumerate(self.step_summaries):
-            b.setVisible(i != cur)
-            b.setText(f"{STEPS[i]}　{self._step_summary(i)}")
+        self.inspector.refresh_summaries()
 
     def _update_flow(self) -> None:
         """按当前数据/结果/过期状态给每一步打 完成 / 待更新 / 未做 标记。"""
@@ -522,8 +452,8 @@ class PhiPage(PageBase):
             state = STEP_STALE if (i in stale and done[i]) else (STEP_DONE if done[i] else STEP_TODO)
             self.flow_bar.set_state(i, state)
         cur = self.flow_bar.current()
-        if cur < len(STEPS) - 1:
-            self.btn_next.setEnabled(self.flow_bar.step_enabled(cur + 1))
+        self.inspector.set_next_enabled(
+            cur + 1 < len(STEPS) and self.flow_bar.step_enabled(cur + 1))
         self._refresh_summaries()
 
     # ══════════════ 结论卡 ══════════════

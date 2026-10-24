@@ -37,7 +37,7 @@ def _verdict(card):
 
 # ═══════════════════════ FlowBar ═══════════════════════
 def test_flow_bar_states_and_current(qt_app):
-    from ui.pages.phi.flow_bar import STALE_TIP, STEP_DONE, STEP_STALE, STEP_TODO, FlowBar
+    from ui.widgets.flow_bar import STALE_TIP, STEP_DONE, STEP_STALE, STEP_TODO, FlowBar
     fb = FlowBar(STEPS)
     assert fb.count() == 5 and fb.current() == -1
     assert [fb.state(i) for i in range(5)] == [STEP_TODO] * 5
@@ -63,7 +63,7 @@ def test_flow_bar_states_and_current(qt_app):
 def test_flow_bar_click_emits_but_set_current_and_disabled_do_not(qt_app):
     from PySide6.QtCore import Qt
     from PySide6.QtTest import QTest
-    from ui.pages.phi.flow_bar import FlowBar
+    from ui.widgets.flow_bar import FlowBar
     fb = FlowBar(STEPS)
     got = []
     fb.step_clicked.connect(got.append)
@@ -86,7 +86,7 @@ def test_flow_bar_click_emits_but_set_current_and_disabled_do_not(qt_app):
 def test_flow_bar_keyboard_activation_and_arrows(qt_app):
     from PySide6.QtCore import Qt
     from PySide6.QtTest import QTest
-    from ui.pages.phi.flow_bar import FlowBar
+    from ui.widgets.flow_bar import FlowBar
     fb = FlowBar(STEPS)
     got = []
     fb.step_clicked.connect(got.append)
@@ -105,7 +105,7 @@ def test_flow_bar_keyboard_activation_and_arrows(qt_app):
 
 # ═══════════════════════ VerdictCard ═══════════════════════
 def test_verdict_card_modes(qt_app):
-    from ui.pages.phi.verdict import VerdictCard
+    from ui.widgets.verdict import VerdictCard
     card = VerdictCard()
     assert card.mode() == "empty" and card.value_text() == ""
 
@@ -131,7 +131,7 @@ def test_verdict_card_modes(qt_app):
 
 
 def test_verdict_card_fits_height_and_elides_at_700px(qt_app):
-    from ui.pages.phi.verdict import MAX_GROUP_ROWS, VerdictCard
+    from ui.widgets.verdict import MAX_GROUP_ROWS, VerdictCard
     card = VerdictCard()
     _verdict(card)                                # 先填正常数据，再塞超长文字与过多组
     card.set_verdict(label="Φ_Δ · " + "很长的样品名" * 10, value="0.90", error="± 0.09",
@@ -153,7 +153,7 @@ def test_verdict_card_fits_height_and_elides_at_700px(qt_app):
 
 def test_verdict_dot_color_resolves_token_hex_and_fallback(qt_app):
     from ui import theme
-    from ui.pages.phi.verdict import _Dot
+    from ui.widgets.verdict import _Dot
     theme.apply("light")
     assert _Dot("series_ref")._qcolor() == theme.color("series_ref")
     assert _Dot("#123456")._qcolor().name() == "#123456"
@@ -164,8 +164,8 @@ def test_verdict_dot_color_resolves_token_hex_and_fallback(qt_app):
 @pytest.mark.parametrize("mode", ["light", "dark"])
 def test_flow_and_verdict_render_in_both_themes(qt_app, mode):
     from ui import theme
-    from ui.pages.phi.flow_bar import STEP_DONE, STEP_STALE, FlowBar
-    from ui.pages.phi.verdict import VerdictCard
+    from ui.widgets.flow_bar import STEP_DONE, STEP_STALE, FlowBar
+    from ui.widgets.verdict import VerdictCard
     assert theme.apply(mode) == mode
     try:
         assert "QFrame#phiVerdict" in theme.stylesheet(mode)        # 组件 QSS 已登记

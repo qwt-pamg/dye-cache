@@ -37,7 +37,7 @@ def _title(g):
 
 
 def _tree(qt_app, scans=None, **kw):
-    from ui.pages.phi.batch_tree import BatchTree
+    from ui.widgets.batch_tree import BatchTree
     tree = BatchTree()
     tree.set_scans(_scans() if scans is None else scans, _title, **kw)
     return tree
@@ -59,7 +59,7 @@ def _pooled(**kw):
 
 
 def test_group_and_file_counts(qt_app):
-    from ui.pages.phi.batch_tree import ALL_GROUPS_TITLE
+    from ui.widgets.batch_tree import ALL_GROUPS_TITLE
     tree = _tree(qt_app)
     assert tree.groups() == sorted([SAMPLE, REF])
     assert tree.topLevelItemCount() == 3
@@ -146,7 +146,7 @@ def test_set_result_marks_truncation_and_reference(qt_app):
 
 def test_failed_group_and_group_colors(qt_app):
     from ui import theme
-    from ui.pages.phi.batch_tree import GROUP_COLORS
+    from ui.widgets.batch_tree import GROUP_COLORS
     scans = _scans(n_sample=2, n_ref=2) + [_scan("Dye-C", 0)]
     tree = _tree(qt_app, scans, reference=REF)
     assert tree.group_color(SAMPLE) == theme.hexc("accent")
