@@ -39,8 +39,8 @@ MAPPED_KEYS = ("cmap_lo", "cmap_hi", "marker_color", "marker_size",
                "marker_edge_w", "legend_size", "legend_loc")
 
 #: 不可映射项清单（per-curve 任意覆写 → 明示"仅工作视图"）
-ONLY_WORK_VIEW_NOTE = ("per-curve 覆写（颜色/线型/线宽/标记）**仅工作视图生效**，"
-                       "不进生图产物；可映射键用「写入出图参数」桥接。")
+ONLY_WORK_VIEW_NOTE = ("单条曲线的颜色/线型/线宽/标记只在工作视图生效，不进定稿图；"
+                       "要保留到定稿图，请点「写入出图参数」。")
 
 #: spectra 可映射键（V25-D1：FR-33.1 要求；点分键 = cfg 内的真实路径）
 SPECTRA_MAPPED_KEYS = ("abs_color", "em_color", "spectra_overlay.cmap")
@@ -172,7 +172,7 @@ class StylePanel(QWidget):
             "Φ_Δ 页会提示「重渲受影响图」；不可映射项不会写入")
         self.btn_preset = QPushButton("另存为预设…")
         self.btn_preset.setToolTip(
-            "把可映射键另存为 presets.yaml v2 的 plot 预设（V2.4 机制复用）；\n"
+            "把可映射键另存为 presets.yaml v2 的 plot 预设；\n"
             "套用后工作视图同步反映该预设")
         self.btn_advanced = QPushButton("高级…")
         self.btn_advanced.setToolTip("打开既有出图风格对话框（完整 JACS_SCHEMA）")
@@ -184,16 +184,16 @@ class StylePanel(QWidget):
         # V2.6 FR-40.6：撤销上一步 / 重置当前曲线 / 重置全部（会话级，不写 cfg）
         self.btn_undo = QPushButton("撤销上一步")
         self.btn_undo.setToolTip(
-            "撤销最近一次曲线样式编辑（颜色/线型/线宽/标记；会话级，不进 cfg）")
+            "撤销最近一次曲线样式编辑（颜色/线型/线宽/标记；仅本次会话，不写入配置）")
         self.btn_undo.setEnabled(False)
         self.btn_undo.clicked.connect(self.undo_last)
         self.btn_reset_current = QPushButton("重置当前曲线")
         self.btn_reset_current.setToolTip(
-            "把表格中选中曲线的会话级样式恢复到载入时的初始值")
+            "把表格中选中曲线的临时样式恢复到载入时的初始值")
         self.btn_reset_current.clicked.connect(self.reset_current)
         self.btn_reset_all = QPushButton("重置全部")
         self.btn_reset_all.setToolTip(
-            "清空全部曲线的会话级样式覆写（复用 live_plot.clear_styles()）")
+            "清空全部曲线的临时样式覆写")
         self.btn_reset_all.clicked.connect(self.reset_all)
         row.addWidget(self.btn_write)
         row.addWidget(self.btn_preset)

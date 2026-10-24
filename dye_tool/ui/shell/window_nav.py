@@ -145,7 +145,7 @@ class MainWindowNavMixin:
         status = getattr(page, "status", None)
         if status is not None:
             try:
-                status.emit("已重置全部曲线的会话级样式（颜色/线型/线宽/标记）")
+                status.emit("已重置全部曲线的临时样式（颜色/线型/线宽/标记）")
             except Exception:                              # noqa: BLE001
                 pass
 
@@ -387,7 +387,7 @@ class MainWindowNavMixin:
         except Exception as err:                   # noqa: BLE001
             log.warning("首启写出 gui.nav 失败（不影响本次使用）：%s", err)
         self.statusBar().showMessage(
-            "已启用 V2.0 任务流布局；想回到旧的平铺页签：「视图」→「经典页签布局」",
+            "已启用任务流布局；想回到旧的平铺页签：「视图」→「经典页签布局」",
             12000)
         self.on_logged("INFO", "已启用任务流布局（gui.nav=flow）；"
                                "「视图」菜单可切回经典页签布局")

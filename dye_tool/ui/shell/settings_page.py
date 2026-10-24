@@ -59,7 +59,7 @@ class PlotPage(QWidget):
         head = QLabel("作图台")
         theme.mark(head, "title")
         sub = QLabel("按数据类型分工：紫外（吸收谱）与荧光（发射谱）。"
-                     "导出文件命名与 V1.3 完全一致（重组只是界面层）。")
+                     "")
         sub.setWordWrap(True)
         theme.mark(sub, "muted")
         lay.addWidget(head)
@@ -168,7 +168,7 @@ class SettingsPage(PageBase):
     """设置：参数（ParamPanel）+ 配置校验 + P9 目录整理。"""
 
     TITLE = "⑤ 设置"
-    SUBTITLE = ("参数与出图预设、config.yaml 校验、旧 runs 目录整理（P9）。"
+    SUBTITLE = ("参数与出图预设、config.yaml 校验、旧 runs 目录整理。"
                 "目录整理默认只出计划（dry-run），勾选后才会真正移动文件。")
 
     def __init__(self, cfg: Optional[dict] = None,
@@ -211,7 +211,7 @@ class SettingsPage(PageBase):
         w_reorg = QWidget()
         lr = QVBoxLayout(w_reorg)
         info = QLabel("把老式 runs/run_<时间戳>/ 扁平目录整理成 runs/<染料>/<时间戳>/。"
-                      "**只移动不删除**；先出计划，确认后才执行。")
+                      "只移动不删除；先出计划，确认后才执行。")
         info.setWordWrap(True)
         lr.addWidget(info)
         bar = QHBoxLayout()

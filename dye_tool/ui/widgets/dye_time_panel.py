@@ -162,7 +162,7 @@ class DyeTimePanel(QWidget):
         self.tabs.addTab(self._build_dye_tab(), "① 染料命名")
         self.tabs.addTab(self._build_time_tab(), "② 时间工作表")
         self.tabs.setToolTip(
-            "整定只影响本次分析与 run 目录里的记录，**不会修改你的原始数据文件**。\n"
+            "整定只影响本次分析与 run 目录里的记录，不会修改你的原始数据文件。\n"
             "①：给每个数据组起染料名（决定输出目录与图内标注）。\n"
             "②：时间可在表里直接改（常规路径，按 Origin 习惯）；文件名符合命名建议时自动识别只是加速器。")
         lay = QVBoxLayout(self)
@@ -223,7 +223,7 @@ class DyeTimePanel(QWidget):
         self.tbl_time.itemChanged.connect(self._on_time_item)
         self.tbl_time.setToolTip(
             "「t(文件名)」是解析出来的原值（只读，用于核对）；\n"
-            "双击「t(生效)」直接改（时间编辑是**常规路径**；文件名符合约定只是可选加速器）。\n"
+            "双击「t(生效)」直接改（时间编辑是常规路径；文件名符合约定只是可选加速器）。\n"
             "可输入秒数（如 300）或带单位（5min / 1.5h）；选中多行后可用下面的批量按钮；Ctrl+Z 撤销。")
 
         self.btn_batch = QPushButton("批量设置…")

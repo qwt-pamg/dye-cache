@@ -58,9 +58,9 @@ class SpectraPage(PageBase):
     """紫外/荧光常规作图页（V2.1：同一页类按**数据类型**复用）。"""
 
     TITLE = "④ 紫外 / 荧光常规作图"
-    SUBTITLE = ("载入两列光谱文本（紫外吸收）或仪器 荧光 荧光发射谱 → "
+    SUBTITLE = ("载入两列光谱文本（紫外吸收）或仪器导出的荧光发射谱 → "
                 "归一化叠图 / 吸收-发射镜像图（自动标注斯托克斯位移）。"
-                "工作视图可直接交互；定稿图用「生成定稿图」（V2.5）。")
+                "工作视图可直接交互；定稿图用「生成定稿图」。")
     #: 「写入出图参数」后向主窗口冒泡（FR-33.3：广播 cfg + Φ_Δ 过期横幅）
     plot_params_written = Signal(dict)
     #: V2.6 FR-41.5：「在分析页记录」→ (abs 文件路径, em 文件路径)；
@@ -100,8 +100,8 @@ class SpectraPage(PageBase):
         self.btn_run = QPushButton("▶ 生成定稿图")
         theme.mark(self.btn_run, "primary")
         self.btn_run.setToolTip(
-            "由**既有流水线渲染器**产出定稿图（JACS 版式）。载入/切换不再自动生图；\n"
-            "探索性交互在工作视图（活画布）里完成（V2.5 FR-32/34）。")
+            "定稿图由分析流水线生成（JACS 版式）。载入/切换不再自动生图；\n"
+            "探索性交互在工作视图（活画布）里完成。")
         self.lbl_info = QLabel("尚未载入光谱")
         theme.mark(self.lbl_info, "muted")
         self.btn_files.clicked.connect(self._choose_files)
@@ -131,7 +131,7 @@ class SpectraPage(PageBase):
         self.chk_despike.setChecked(True)
         self.chk_despike.setToolTip(
             "按 Φ_Δ 的同一判据（滚动中位数 ± k×MAD）剔除单点异常后再作图；\n"
-            "只影响本页图件与导出图，**不修改原始数据文件**、不参与数值分析。\n"
+            "只影响本页图件与导出图，不修改原始数据文件、不参与数值分析。\n"
             "取消勾选 = 按原始数据作图（旧行为）。")
         self.cmb_abs = QComboBox()
         self.cmb_em = QComboBox()
@@ -144,7 +144,7 @@ class SpectraPage(PageBase):
         f.addRow("", self.chk_despike)
         self.cmb_display_preset = QComboBox()
         self.cmb_display_preset.setToolTip(
-            "V2.8 FR-53：套用 presets.yaml 的 spectra 节显示预设（只影响本页视图）")
+            "套用 presets.yaml 的 spectra 节显示预设（只影响本页视图）")
         self.btn_display_preset_save = QPushButton("保存…")
         self.btn_display_preset_save.setToolTip("把当前④作图设置存为命名预设（presets.yaml）")
         self.btn_display_preset_save.clicked.connect(self._save_display_preset_dialog)
@@ -208,7 +208,7 @@ class SpectraPage(PageBase):
         self.btn_record_pair.setToolTip(
             "把当前配对（吸收/发射各一支）带到②分析页的「斯托克斯位移」测量卡：\n"
             "自动预填该对 → 确认后点「加入对比表」。仅镜像/上下两栏模式、已配对时可用。\n"
-            "（Q-E16：本页只做可视化，不自动配对入表。）")
+            "")
         self.btn_record_pair.setEnabled(False)
         self.btn_record_pair.clicked.connect(self._record_current_pair)
         box_s = QGroupBox("结果")
@@ -253,19 +253,19 @@ class SpectraPage(PageBase):
         self.cmb_view = QComboBox()
         self.cmb_view.addItems(["工作视图", "定稿预览"])
         self.cmb_view.setToolTip(
-            "工作视图 = 会话级交互（缩放/平移/读数/标注/实时样式），不等于定稿产物；\n"
+            "工作视图 = 临时交互（缩放/平移/读数/标注/实时样式），不等于定稿产物；\n"
             "定稿预览只显示已生成图件，不触发生成")
         self.cmb_view.currentIndexChanged.connect(self._on_view_changed)
         self.chk_readout = QCheckBox("读数模式")
         self.chk_readout.setToolTip(
-            "鼠标移动时在状态栏显示**最近数据点**的物理坐标（不插值；会话级）")
+            "鼠标移动时在状态栏显示最近数据点的物理坐标（不插值；仅本次会话）")
         self.chk_readout.toggled.connect(self.live.set_readout_enabled)
         self.cmb_annot = QComboBox()
         self.cmb_annot.addItem("无标注", "")
         self.cmb_annot.addItem("文本", "text")
         self.cmb_annot.addItem("箭头", "arrow")
         self.cmb_annot.addItem("区域", "rect")
-        self.cmb_annot.setToolTip("标注模式（会话级；随「按当前视图导出」带出，不写 run 产物）")
+        self.cmb_annot.setToolTip("标注模式（仅本次会话；随「按当前视图导出」带出，不写入结果目录）")
         self.cmb_annot.currentIndexChanged.connect(
             lambda i: self.live.set_annotation_mode(self.cmb_annot.itemData(i)))
         self.btn_export_view = QPushButton("按当前视图导出…")
@@ -280,11 +280,11 @@ class SpectraPage(PageBase):
         view_bar.addWidget(self.cmb_annot)
         view_bar.addStretch(1)
         view_bar.addWidget(self.btn_export_view)
-        box_fig = QGroupBox("图件视图（工作视图 ≠ 定稿产物）")
+        box_fig = QGroupBox("图件视图")
         lfig = QVBoxLayout(box_fig)
         lfig.addLayout(view_bar)
         lfig.addWidget(self.view_stack, 1)
-        box_style = QGroupBox("实时参数编辑（会话级；写入/预设为显式桥接）")
+        box_style = QGroupBox("曲线样式（仅本次会话；「写入出图参数」后才保存）")
         ls = QVBoxLayout(box_style)
         self.style_panel = StylePanel(with_spectra=True)   # V25-D1：spectra 键区
         # V2.6 FR-38.3：风格面板自身约 500px 高 → 独立 QScrollArea（必须可滚，不把底部按钮顶出屏幕）
@@ -828,8 +828,8 @@ class SpectraPage(PageBase):
                                            "x": np.asarray(em_s.wl, float).ravel(),
                                            "y": self._norm_y(em_s.y)}]})
         self.live.set_panels(
-            panels, suptitle=label_text("工作视图（会话级）",
-                                        "Working view (session-only)"))
+            panels, suptitle=label_text("工作视图",
+                                        "Working view"))
         self._sync_style_panel()
         self.cmb_view.setCurrentIndex(0)
         self.view_stack.setCurrentIndex(0)

@@ -36,8 +36,8 @@ class ExtinctionPanel(PageBase):
     """
 
     TITLE = "摩尔消光系数 ε（P6）"
-    SUBTITLE = ("载入光谱序列 → 表格按**文件解析顺序**逐行填浓度（mol/L）→ 计算 ε。"
-                "本页与命令行 --extinction 走同一套 core 函数。")
+    SUBTITLE = ("载入光谱序列 → 表格按文件解析顺序逐行填浓度（mol/L）→ 计算 ε。"
+                "计算方法与命令行 --extinction 相同。")
 
     #: 浓度列下标（0=序号、1=文件名、2=浓度）
     CONC_COL = 2
@@ -69,7 +69,7 @@ class ExtinctionPanel(PageBase):
         bar.addWidget(self.btn_run)
         bar.addStretch(1)
         lay.addLayout(bar)
-        hint = QLabel("浓度按**文件解析顺序**逐行填写（行序 = collect_scans 解析序，"
+        hint = QLabel("浓度按文件解析顺序逐行填写（行序 = 程序读取文件的顺序，"
                       "不会错位）；默认留空，不替用户猜值。双击/F2 编辑，"
                       "Tab/回车换行，可直接从 Excel 粘贴一列。")
         hint.setWordWrap(True)

@@ -174,7 +174,7 @@ class MainWindowActionsMixin:
         self.cfg.setdefault("gui", {})["theme"] = mode
         theme.apply(mode)
         self._save_cfg()
-        self.on_status(f"界面主题：{theme.THEME_LABELS.get(mode, mode)}")
+        self.on_status(f"界面主题：{theme.THEME_LABELS.get(mode, mode)}（画布工具栏图标重启后跟随）")
 
     def _validate_cfg(self) -> None:
         """当前配置全量校验（FR-10.1）。"""

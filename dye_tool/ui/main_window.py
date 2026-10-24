@@ -54,12 +54,13 @@ class MainWindow(QMainWindow, MainWindowNavMixin, MainWindowActionsMixin):
         # V2.3 FR-24.1：Esc = 取消当前正在跑的后台任务（无任务时零动作）
         self._esc_shortcut = QShortcut(QKeySequence("Escape"), self)
         self._esc_shortcut.activated.connect(self._cancel_active_jobs)
+        # 主题要在建页面之前装好：matplotlib 工具栏按建好时的底色挑图标深浅
+        self._apply_style()
         self._build_pages()                 # 只构造页面对象，不放进任何容器
         self._build_layout()                # 按 gui.nav 选 flow / classic
         self._build_dock()
         self._build_menu()
         self._build_status()
-        self._apply_style()
         # 旧配置（没有 gui.nav 键）→ **非模态**一次性提示（Q7）；必须等
         # log_view / statusBar 建好之后才能发（第一版在 _build_flow 里调，
         # 直接 AttributeError: log_view —— 实测踩过）。

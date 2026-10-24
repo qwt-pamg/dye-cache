@@ -48,6 +48,10 @@ RESULT_HEADERS = ["组别", "角色", "k ± σk (s⁻¹)", "R²", "n", "A(0)",
 
 
 
+#: 页面宽度低于它时，三栏改为二栏（右侧出图设置与左侧参数共用一栏，按钮切换）
+NARROW_PAGE_W = 1180
+
+
 class UnifiedSettingsPanel(QWidget):
     """V2.9.4 FR-70：统一页右侧设置区（可滚动/最小宽，兼容 ComparePage 设置项）。"""
     changed = Signal()
@@ -289,9 +293,8 @@ class PhiPage(PageBase):
     """
 
     TITLE = "① 单线态氧（k_obs → Φ_Δ）"
-    SUBTITLE = ("一个页面完成：选择目录/分组 → 逐组拟合 k_obs（阶段 B 中间结果）→ "
-                "指定参比/Φ_ref → 同页算 Φ_Δ（阶段 D）→ 出图/导出。\n"
-                "k_obs 是 Φ_Δ 的中间步骤，不是第二套工作流；改参比只重算 Φ，不重新拟合 k。")
+    SUBTITLE = ("选择数据 → 逐组拟合 k_obs → 指定参比与 Φ_ref → 得到 Φ_Δ 与图件。"
+                "改参比只重算 Φ_Δ，不会重新拟合 k_obs。")
 
     #: V2.6 FR-40.5：结果区「下一步」→ ③ 图件 / 定稿出图
     next_step_requested = Signal(str)
@@ -339,7 +342,7 @@ class PhiPage(PageBase):
         self.btn_reload = QPushButton("重新载入")
         self.btn_run = QPushButton("▶ 开始分析")
         theme.mark(self.btn_run, "primary")
-        self.btn_run.setToolTip("跑完整流水线并出**预览图**（低分辨率、秒级完成）")
+        self.btn_run.setToolTip("跑完整流水线并出预览图（低分辨率、秒级完成）")
         self.btn_final = QPushButton("定稿出图")
         self.btn_final.setToolTip(
             "用刚才的数据直接重渲 600 dpi 的 png 到 figures/（不再重新读文件）\n"
@@ -403,9 +406,10 @@ class PhiPage(PageBase):
         theme.mark(self.lbl_live, "hint")
         top3.addWidget(self.chk_live)
         top3.addWidget(self.lbl_live)
-        self.btn_settings_toggle = QPushButton("设置区")
+        self.btn_settings_toggle = QPushButton("出图设置")
         self.btn_settings_toggle.setCheckable(True)
-        self.btn_settings_toggle.setToolTip("窄窗口下在「分析参数」与「统一设置区」之间切换，避免三栏重叠。")
+        self.btn_settings_toggle.setToolTip("窗口较窄时左栏只放一组：按下显示出图设置（图式/误差棒/导出格式），"
+                                            "再按一次回到分析参数。")
         top3.addWidget(self.btn_settings_toggle)
         top3.addStretch(1)
         top3.addWidget(self.btn_final)
@@ -428,9 +432,9 @@ class PhiPage(PageBase):
         left_tabs.addTab(scroll_p, "分析参数")
         left_tabs.addTab(self.dye_panel, "预分析整定")
         left_tabs.setToolTip(
-            "「预分析整定」= 分析**之前**给数据组起染料名、修不正常的时间；\n"
+            "「预分析整定」= 分析之前给数据组起染料名、修不正常的时间；\n"
             "两个动作都只影响本次分析与 run 记录，不会改动原始文件。")
-        left_tabs.setMinimumWidth(300)
+        left_tabs.setMinimumWidth(320)
         left_tabs.setMaximumWidth(380)
 
         # ── 右：文件清单 / 图件 / 结果表 ──
@@ -474,10 +478,10 @@ class PhiPage(PageBase):
         self.table.horizontalHeader().setSectionResizeMode(7, QHeaderView.Stretch)
         # FR-23.6b：点结果表某行 → 跳到该组页签（组页签未启用时该方法直接返回）
         self.table.cellClicked.connect(self._on_result_row_clicked)
-        self.lbl_stage_bd = QLabel("阶段 B：k_obs 拟合（中间结果）  →  阶段 D：Φ_Δ（由同一批 k 直接换算）")
+        self.lbl_stage_bd = QLabel("先逐组拟合 k_obs，再由同一批 k 换算 Φ_Δ")
         theme.mark(self.lbl_stage_bd, "hint")
         self.lbl_stage_bd.setWordWrap(True)
-        box_res = QGroupBox("阶段 B/D：k_obs 中间结果 + Φ_Δ 结果")
+        box_res = QGroupBox("结果：k_obs 与 Φ_Δ")
         lr = QVBoxLayout(box_res)
         lr.addWidget(self.lbl_stage_bd)
         lr.addWidget(self.table)
@@ -914,7 +918,7 @@ class PhiPage(PageBase):
         if only_plot:
             self._banner_kind = "plot"
             self.lbl_banner.setText(
-                "⚠ 结果已过期：仅**出图参数**变了（数值未变）——可只重渲受影响图，"
+                "⚠ 结果已过期：仅出图参数变了（数值未变）——可只重渲受影响图，"
                 "不必重算。")
             self.btn_banner_action.setText("重渲受影响图")
         else:
@@ -1888,12 +1892,13 @@ class PhiPage(PageBase):
         """V2.9.6 M4：窄页三栏最小宽超页宽时，隐藏设置区/改为二栏，避免叠加。"""
         if not hasattr(self, "_body"):
             return
-        narrow = self.width() < 1000
+        # 三栏实际最小宽（含中栏按钮行）约 1000，留出余量：低于 1180 就改二栏 + 切换按钮
+        narrow = self.width() < NARROW_PAGE_W
         try:
             if narrow:
                 self._body.setChildrenCollapsible(True)
-                self._left_tabs.setMinimumWidth(280)
-                self._left_tabs.setMaximumWidth(300)
+                self._left_tabs.setMinimumWidth(320)
+                self._left_tabs.setMaximumWidth(340)
                 self._right.setMinimumWidth(220)
                 if self.btn_settings_toggle.isChecked():
                     self._left_tabs.setVisible(False)
@@ -1902,17 +1907,17 @@ class PhiPage(PageBase):
                 else:
                     self.settings_panel.setVisible(False)
                     self._left_tabs.setVisible(True)
-                    self._body.setSizes([300, 352, 0])
+                    self._body.setSizes([330, 352, 0])
             else:
                 self._body.setChildrenCollapsible(False)
                 self._left_tabs.setVisible(True)
                 self.settings_panel.setVisible(True)
-                self._left_tabs.setMinimumWidth(300)
+                self._left_tabs.setMinimumWidth(320)
                 self._left_tabs.setMaximumWidth(380)
                 self._right.setMinimumWidth(380)
                 self.settings_panel.setMinimumWidth(260)
                 self.settings_panel.setMaximumWidth(280)
-                self._body.setSizes([300, 454, 270])
+                self._body.setSizes([330, 454, 270])
         except RuntimeError:
             pass
 

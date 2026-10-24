@@ -35,7 +35,7 @@ class PeaksPanel(PageBase):
 
     TITLE = "峰分析（P8）"
     SUBTITLE = ("选光谱目录 → 后台逐谱找峰（突出度≥5%、峰高≥2%、间距≥5 点、≤20 峰、"
-                "NaN 分段）→ 峰表 → 导出 CSV。判据见设计文档 §5.4 FR-37.3（Q-E5）。")
+                "NaN 分段）→ 峰表 → 导出 CSV。")
 
     #: 表格列（与 CSV 表头一致，文件列 + 峰序号）
     COLUMNS = ("文件", "峰#", "波长 (nm)", "强度", "突出度", "宽 (pts)", "宽 (nm)")
@@ -63,7 +63,7 @@ class PeaksPanel(PageBase):
         bar.addWidget(self.btn_export)
         bar.addStretch(1)
         lay.addLayout(bar)
-        hint = QLabel("判据（Q-E5，已批准）：突出度 ≥ 动态范围 5%；峰高（相对谱最小值）"
+        hint = QLabel("判据：突出度 ≥ 动态范围 5%；峰高（相对谱最小值）"
                       "≥ 动态范围 2%；相邻峰 ≥ 5 点；单谱最多 20 峰（按突出度降序截断）；"
                       "NaN 断点分段检测、不跨段合并；全谱范围。")
         hint.setWordWrap(True)

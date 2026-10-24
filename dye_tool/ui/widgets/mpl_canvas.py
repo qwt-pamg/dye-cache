@@ -64,7 +64,10 @@ class MplCanvas(FigureCanvasQTAgg):
         self._set_placeholder("尚无图件")
 
     def _set_placeholder(self, text: str) -> None:
-        """画占位文字；有中文字体就用中文，没有则退回英文（不出豆腐块）。"""
+        """画占位文字；有中文字体就用中文，没有则退回英文（不出豆腐块）。
+
+        空画布跟随界面主题底色；载入图件时再换回白底（图件本身是白底产物）。"""
+        self.fig.set_facecolor(theme.hexc("surface"))
         fam = _zh_font_family()
         shown = str(text)
         kwargs = {}
@@ -75,7 +78,7 @@ class MplCanvas(FigureCanvasQTAgg):
                 shown = shown.encode("ascii", "replace").decode("ascii")
         self._placeholder = self.ax.text(
             0.5, 0.5, shown, ha="center", va="center",
-            transform=self.ax.transAxes, color="0.6", **kwargs)
+            transform=self.ax.transAxes, color=theme.hexc("text_subtle"), **kwargs)
 
 
 class ZoomDialog(QDialog):
@@ -605,6 +608,7 @@ def _show_image(self: MplCanvas, path: Path | str) -> None:
     """把 PNG 回显到画布（清除坐标轴，保持原始宽高比）。"""
     p = Path(path)
     self.fig.clear()
+    self.fig.set_facecolor("white")
     self.ax = self.fig.add_subplot(111)
     try:
         if p.suffix.lower() == ".png":
@@ -625,6 +629,7 @@ def _show_image(self: MplCanvas, path: Path | str) -> None:
 def _show_figure(self: MplCanvas, fig: Figure) -> None:
     """把外部 Figure 的坐标轴内容搬到本画布。"""
     self.fig.clear()
+    self.fig.set_facecolor("white")
     src = fig.axes[0] if fig.axes else None
     self.ax = self.fig.add_subplot(111)
     if src is not None:

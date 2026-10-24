@@ -122,7 +122,7 @@ class PhotophysicsPanel(PageBase):
 
     TITLE = "光物理表征（φ / 光漂白 / 表征总表）"
     SUBTITLE = ("论文数据链：相对法荧光量子产率 φ + 亮度；体外/成像光漂白单指数；"
-                "多条件表征总表（与 Stokes 表同一模块）。全部按需计算、不写 cfg。")
+                "多条件表征总表（与 Stokes 表同一模块）。全部按需计算，不改动配置。")
 
     def __init__(self, cfg: Optional[dict] = None,
                  parent: Optional[QWidget] = None):
@@ -411,7 +411,7 @@ class PhotophysicsPanel(PageBase):
     def _build_char_tab(self) -> None:
         lay = QVBoxLayout(self.tab_char)
         lay.setContentsMargins(8, 8, 8, 8)
-        hint = QLabel("行 = 化合物 × 条件；缺项留空可编辑。与 FR-41 Stokes 表同一模块"
+        hint = QLabel("行 = 化合物 × 条件；缺项留空可编辑。与 Stokes 表同一模块"
                       "（core/report/characterization.py），可导入 Stokes 行后统一导出。")
         hint.setWordWrap(True)
         theme.mark(hint, "hint")
@@ -1295,7 +1295,7 @@ class PhotophysicsPanel(PageBase):
                 log.warning("读取 Stokes 行失败：%s", err)
                 rows = []
         if not rows:
-            self.status.emit("FR-41 Stokes 对比表为空：没有可导入的行")
+            self.status.emit("Stokes 对比表为空：没有可导入的行")
             return 0
         added = 0
         for sr in rows:
@@ -1308,7 +1308,7 @@ class PhotophysicsPanel(PageBase):
                 "lam_em": _as_float(getattr(sr, "lam_em", None)),
                 "delta_lambda": _as_float(getattr(sr, "delta_lambda", None)),
                 "delta_wavenumber": _as_float(getattr(sr, "delta_wavenumber", None)),
-                "note": "来自 FR-41 Stokes 对比表",
+                "note": "来自 Stokes 对比表",
             })
             for key in _CHAR_KEYS:                     # 只保留已知键
                 if key not in row:

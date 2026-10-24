@@ -108,9 +108,9 @@ class AnalysisPage(QWidget):
             "当前还没有批次数据：切到 ① 数据页选择/拖入数据目录")
         self.btn_empty_data.clicked.connect(self.request_data_page.emit)
         self.btn_empty_data.setVisible(True)
-        # V2.6 FR-38.2：左栏 240–340（原 max 300 在窄栏把任务项挤成 4–6 行）
-        left.setMinimumWidth(240)
-        left.setMaximumWidth(340)
+        # 左栏 200–260：任务项是"名称 + 需要"两行，再宽只是把工作区挤窄
+        left.setMinimumWidth(200)
+        left.setMaximumWidth(260)
         split.addWidget(left)
 
         self.stack = QStackedWidget()
@@ -159,7 +159,7 @@ class AnalysisPage(QWidget):
         split.addWidget(self.stack)
         split.setStretchFactor(0, 0)
         split.setStretchFactor(1, 1)
-        split.setSizes([260, 1200])       # V2.6 FR-38.2：左栏初值 260px
+        split.setSizes([220, 1200])       # 左栏初值 220px
         lay.addWidget(split, 1)
 
         self.list.currentRowChanged.connect(self._on_task)
@@ -191,7 +191,7 @@ class AnalysisPage(QWidget):
         self._layout_inited = True
         try:
             total = self.split.width()
-            self.split.setSizes([260, max(1, total - 260)])
+            self.split.setSizes([220, max(1, total - 220)])
         except Exception:                              # noqa: BLE001 —— 布局未就绪时保持构造初值
             pass
 

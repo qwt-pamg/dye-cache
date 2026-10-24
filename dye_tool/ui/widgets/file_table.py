@@ -101,7 +101,7 @@ class FileTable(QWidget):
         self.table.installEventFilter(self)       # 空格勾选 / Ctrl+A 视图全选
         self.table.setToolTip(
             "勾选参与分析的文件；灰色行 = 坏文件，已自动剔除。\n"
-            "「染料」双击可改（**整组一起改**，决定输出目录与图内标注）；\n"
+            "「染料」双击可改（整组一起改，决定输出目录与图内标注）；\n"
             "「时间 (s)」双击可改（只改这一行；鼠标悬停可看到文件名里的原值）。")
 
         self.lbl = QLabel("尚未载入数据")
@@ -129,7 +129,7 @@ class FileTable(QWidget):
             "检索：文件名 / 组别 / 染料（空格分隔多关键词；清空恢复全部）")
         self.ed_search.setClearButtonEnabled(True)
         self.ed_search.setToolTip(
-            "与组页签过滤**叠加**（AND）；匹配文件名/组别/染料，大小写不敏感。\n"
+            "与组页签过滤叠加（AND）；匹配文件名/组别/染料，大小写不敏感。\n"
             "只影响表格显示，不改勾选与解析顺序（仅本会话记忆）。")
         self.ed_search.textChanged.connect(self._on_search_changed)
         self.lbl_search = QLabel("")

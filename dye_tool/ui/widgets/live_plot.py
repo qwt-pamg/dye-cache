@@ -40,7 +40,7 @@ from matplotlib.patches import Rectangle
 from ui import theme
 
 #: 工作视图提示（UI 明示"不等于定稿产物"）
-WORK_VIEW_HINT = "工作视图（会话级，≠ 定稿产物；定稿请点「生成定稿图」）"
+WORK_VIEW_HINT = "工作视图：可缩放、读数、调样式，但不是定稿图；定稿请点「生成定稿图」"
 
 #: 曲线默认样式（会话级可改；与 JACS_SCHEMA 的键名同义，便于桥接）
 DEFAULT_STYLE = {

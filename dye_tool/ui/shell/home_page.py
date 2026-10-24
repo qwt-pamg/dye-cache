@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Optional
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import (QFrame, QGridLayout, QGroupBox, QHBoxLayout,
+from PySide6.QtWidgets import (QFrame, QGroupBox, QHBoxLayout,
                                QLabel, QPushButton, QScrollArea, QTextBrowser,
                                QVBoxLayout, QWidget)
 from ui import theme
@@ -130,27 +130,58 @@ class HomePage(QWidget):
 
     def _steps_box(self) -> QWidget:
         box = QGroupBox("三步开始")
-        g = QGridLayout(box)
-        g.setColumnStretch(1, 1)
-        self.btn_demo = QPushButton("▶ 一键演示（自动跑完整流程）")
+        outer = QVBoxLayout(box)
+        self.btn_demo = QPushButton("▶ 一键演示")
         self.btn_demo.setToolTip("生成一组已知真值的合成数据，"
                                  "从数据载入一路跑到出图与档案")
         self.btn_demo.clicked.connect(self.demo_requested.emit)
         self.btn_open = QPushButton("打开我的数据目录…")
+        theme.mark(self.btn_open, "primary")
         self.btn_open.clicked.connect(self.open_dir_requested.emit)
-        self.btn_naming = QPushButton("我的文件该怎么命名？")
+        self.btn_naming = QPushButton("文件该怎么命名？")
         self.btn_naming.clicked.connect(self._show_naming_wizard)
-        g.addWidget(QLabel("1"), 0, 0)
-        g.addWidget(QLabel("让程序认识你的数据：照命名约定放文件，或点「一键演示」看它跑一遍。"),
-                  0, 1)
-        g.addWidget(self.btn_open, 1, 0)
-        g.addWidget(QLabel("检查批次：① 数据页看文件表、角色/时间是否需要整定、QC 徽标有没有红。"),
-                  1, 1)
-        g.addWidget(self.btn_demo, 2, 0)
-        g.addWidget(QLabel("② 分析页选任务（Φ_Δ / kobs / ε / A@λ）→ 开始 → "
-                           "满意后「定稿出图」。"), 2, 1)
-        g.addWidget(self.btn_naming, 3, 0, 1, 2)
+        row = QHBoxLayout()
+        row.setSpacing(12)
+        row.addWidget(self._step_card(
+            "1", "准备数据",
+            "把同一批光谱放进一个目录，按「组名-秒数.txt」命名，程序能自动读出组别和时间。",
+            self.btn_naming), 1)
+        row.addWidget(self._step_card(
+            "2", "载入并检查",
+            "打开数据目录，在「① 数据」页确认组别、角色和时间，看 QC 有没有红标。",
+            self.btn_open), 1)
+        row.addWidget(self._step_card(
+            "3", "分析与出图",
+            "在「② 分析」页选任务（Φ_Δ / k_obs / ε / A@λ）开始分析，满意后点「定稿出图」。",
+            None), 1)
+        outer.addLayout(row)
+        demo = QHBoxLayout()
+        lbl = QLabel("手头没有数据？用合成数据把整个流程跑一遍：")
+        theme.mark(lbl, "muted")
+        demo.addWidget(lbl)
+        demo.addWidget(self.btn_demo)
+        demo.addStretch(1)
+        outer.addLayout(demo)
         return box
+
+    @staticmethod
+    def _step_card(num: str, title: str, text: str,
+                   button: Optional[QPushButton]) -> QWidget:
+        card = QFrame()
+        theme.mark(card, "card")
+        lay = QVBoxLayout(card)
+        lay.setContentsMargins(14, 12, 14, 12)
+        head = QLabel(f"{num}　{title}")
+        theme.mark(head, "section")
+        lay.addWidget(head)
+        body = QLabel(text)
+        body.setWordWrap(True)
+        theme.mark(body, "muted")
+        lay.addWidget(body)
+        lay.addStretch(1)
+        if button is not None:
+            lay.addWidget(button, 0, Qt.AlignLeft)
+        return card
 
     def _recent_box(self) -> QWidget:
         box = QGroupBox("最近")

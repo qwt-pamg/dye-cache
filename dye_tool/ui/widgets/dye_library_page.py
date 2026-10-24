@@ -415,7 +415,7 @@ class DyeLibraryPage(QWidget):
         theme.mark(self.lbl_title, "title")
         self.lbl_sub = QLabel(
             "按染料汇总历次 run 的档案（history.csv）。左栏选染料 → 右栏看历史表与趋势。"
-            "「未归档 (V1.0)」里的旧 run 目录只读浏览，程序绝不改名或移动它们。")
+            "「未归档（旧版目录）」里的旧 run 目录只读浏览，程序绝不改名或移动它们。")
         theme.mark(self.lbl_sub, "muted")
         self.lbl_sub.setWordWrap(True)
 
@@ -459,17 +459,17 @@ class DyeLibraryPage(QWidget):
         lay_d.addWidget(self.table_dyes)
 
         # ── 左下：未归档（V1.0）只读分组 ──
-        self.lbl_legacy = QLabel("未归档 (V1.0)：0 个目录")
+        self.lbl_legacy = QLabel("未归档（旧版目录）：0 个目录")
         theme.mark(self.lbl_legacy, "muted")
         self.list_legacy = QListWidget()
         self.list_legacy.setSelectionMode(QAbstractItemView.SingleSelection)
         self.list_legacy.setToolTip(
-            "V1.0 的旧式 run_<时间戳> 目录：**只能浏览和打开**。\n"
+            "V1.0 的旧式 run_<时间戳> 目录：只能浏览和打开。\n"
             "程序绝不改名、移动或迁移它们（设计文档 §1.3-11）；双击可在文件管理器中打开。")
         self.list_legacy.itemDoubleClicked.connect(self._open_legacy_item)
         self.list_legacy.itemSelectionChanged.connect(self._on_legacy_selected)
 
-        box_legacy = QGroupBox("未归档 (V1.0)")
+        box_legacy = QGroupBox("未归档（旧版目录）")
         lay_lg = QVBoxLayout(box_legacy)
         lay_lg.addWidget(self.lbl_legacy)
         lay_lg.addWidget(self.list_legacy, 1)
@@ -694,7 +694,7 @@ class DyeLibraryPage(QWidget):
         （FR-9.2：界面只翻译，不新增判断）。
         """
         #: V1.0 旧目录的"原因 + 建议"（借用 FR-9.2 的翻译层，不新增判断逻辑）
-        reason = "缺少 history.csv 档案（V1.0 旧式 run 目录）"
+        reason = "缺少 history.csv 档案"
         why, action = explain_exclusion(reason)
         why = why or reason
         action = action or "只读浏览；如需归档请重新跑一次分析，程序不会移动旧目录"

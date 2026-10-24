@@ -59,7 +59,7 @@ class BatchQueuePanel(PageBase):
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.addWidget(self.header())
-        hint = QLabel("提示：队列目录**不经①数据页**，整定只来自各目录自己的 "
+        hint = QLabel("提示：队列目录不经①数据页，整定只来自各目录自己的 "
                       "dye_batch.yaml；①数据页的会话整定/染料名不适用于队列。")
         hint.setWordWrap(True)
         theme.mark(hint, "hint")

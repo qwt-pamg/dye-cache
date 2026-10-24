@@ -46,7 +46,7 @@ class StokesPanel(PageBase):
     """
 
     TITLE = "斯托克斯位移（一对一测量）"
-    SUBTITLE = ("吸收谱与发射谱**各选一支**（单选，点击替换）→ 即时预览 "
+    SUBTITLE = ("吸收谱与发射谱各选一支（单选，点击替换）→ 即时预览 "
                 "λabs/λem/Δλ/Δν̃ → 「加入对比表」形成跨组台账。"
                 "不自动配对、不自动入表；对比表仅本次会话（导出 CSV 持久化）。")
 
@@ -108,7 +108,7 @@ class StokesPanel(PageBase):
         bar.addWidget(self.lbl_dir, 1)
         lay.addLayout(bar)
         hint = QLabel(
-            "每次只选一对：左侧吸收谱 + 右侧发射谱**各一支**（单选，点击第二个即替换）；"
+            "每次只选一对：左侧吸收谱 + 右侧发射谱各一支（单选，点击第二个即替换）；"
             "未选齐时「加入对比表」禁用，也不会自动配对/自动入表。")
         hint.setWordWrap(True)
         theme.mark(hint, "hint")
@@ -624,7 +624,7 @@ class StokesPanel(PageBase):
             ia = self._find_index(self._abs, abs_path)
             ie = self._find_index(self._em, em_path)
         if ia is None or ie is None:
-            msg = "③桥接失败：找不到匹配的吸收/发射谱（kind 不符或文件无效）"
+            msg = "发送到图件页失败：找不到匹配的吸收/发射谱（kind 不符或文件无效）"
             self.status.emit(msg)
             self.logged.emit("WARNING", msg)
             return False

@@ -244,6 +244,15 @@ QListWidget#navList::item:hover {{ background: {p['surface_alt']}; color: {p['te
 QListWidget#navList::item:selected {{ background: {p['accent_soft']}; color: {p['accent']};
                                      font-weight: bold; }}
 
+/* ── ② 分析页任务列表 ── */
+QListWidget#taskList {{ background: transparent; border: none; outline: none; }}
+QListWidget#taskList::item {{ padding: 7px 8px; margin: 2px 0; border-radius: 6px;
+                             border: 1px solid {p['border']}; background: {p['surface']};
+                             color: {p['text']}; }}
+QListWidget#taskList::item:hover {{ border-color: {p['accent']}; }}
+QListWidget#taskList::item:selected {{ background: {p['accent_soft']};
+                                      border-color: {p['accent']}; color: {p['text']}; }}
+
 /* ── 文字角色（ui.theme.mark） ── */
 QLabel[role="hero"] {{ font-size: 22px; font-weight: bold; color: {p['text']}; }}
 QLabel[role="title"] {{ font-size: 16px; font-weight: bold; color: {p['text']}; }}
