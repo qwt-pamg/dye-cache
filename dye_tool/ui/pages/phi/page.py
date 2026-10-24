@@ -87,7 +87,54 @@ class PhiPage(PageBase):
 
     # ══════════════ 构建 ══════════════
     def _build(self) -> None:
-        # ── 顶部：目录选择 ──
+        toolbar = self._build_toolbar()
+        left_tabs = self._build_params_column()
+        right = self._build_work_column()
+        self._build_settings_column()
+        body = self._build_body(left_tabs, right)
+        # ── 底：进度 + 导出 ──
+        self.export = ExportBar(on_workbook=self._export_workbook,
+                                on_dashboard=self._export_dashboard)
+        # V2.3 FR-24.2/24.6：导出条的常规反馈走状态栏（不弹模态）。
+        # A15（V2.x 审查）：`canvas.status_message` 已在创建画布处连接过一次，
+        # 这里**再连一次**会让每条画布消息在状态栏出现两遍（与 F2 同类）。
+        self.export.message.connect(self.status)
+        # V2.6 FR-40.5：结果区动作条（打开输出 / 复制结果 / 下一步 / 重试）
+        self.actions = ResultActions(
+            self, next_target="plot",
+            next_text="下一步：③ 图件预览 / 定稿出图")
+        self.actions.message.connect(self.status)
+        self.actions.next_step_requested.connect(self.next_step_requested.emit)
+        self.actions.retry_requested.connect(self._run)
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.addWidget(self.header())
+        self.setToolTip("可把数据目录 / 光谱文件直接拖到这里")
+        for row in toolbar:
+            lay.addLayout(row)
+        # A25.1（V2.3 §12）：结果过期横幅（参数改了但结果没重算时出现，非模态）
+        self.banner = StaleBanner()
+        self.banner.action_requested.connect(self._on_banner_action)
+        lay.addWidget(self.banner)
+        lay.addWidget(body, 1)
+        lay.addWidget(self.progress_row())
+        lay.addWidget(self.actions)
+        lay.addWidget(self.export)
+
+        # A25.2（V2.3 §12）：结果表 / 组页签右键菜单；文件表与画布的右键由各自组件实现
+        self.table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self._on_result_context_menu)
+        self.group_tabs.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.group_tabs.customContextMenuRequested.connect(
+            self._on_group_tab_context_menu)
+        self.files.status_message.connect(self.status)
+        # 勾选状态来自配置（gui.lazy_preview），改动即持久化到 config.yaml
+        self.chk_lazy.blockSignals(True)
+        self.chk_lazy.setChecked(self._lazy_enabled())
+        self.chk_lazy.blockSignals(False)
+
+    def _build_toolbar(self) -> list:
+        """顶部三行：目录 / 参比与 Φ_ref / 预览开关与主按钮。"""
         self.btn_dir = QPushButton("选择数据目录…")
         self.btn_reload = QPushButton("重新载入")
         self.btn_run = QPushButton("▶ 开始分析")
@@ -165,7 +212,10 @@ class PhiPage(PageBase):
         top3.addWidget(self.btn_final)
         top3.addWidget(self.btn_run)
 
-        # ── 左：参数面板 + 预分析整定（染料命名 / 时间工作表） ──
+        return [top1, top2, top3]
+
+    def _build_params_column(self) -> QTabWidget:
+        """左栏：分析参数 + 预分析整定（染料命名 / 时间工作表）。"""
         self.params = ParamPanel()
         self.params.changed.connect(self._on_params_changed)
         scroll_p = QScrollArea()
@@ -187,7 +237,10 @@ class PhiPage(PageBase):
         left_tabs.setMinimumWidth(320)
         left_tabs.setMaximumWidth(380)
 
-        # ── 右：文件清单 / 图件 / 结果表 ──
+        return left_tabs
+
+    def _build_work_column(self) -> QSplitter:
+        """中栏：组页签 + 文件清单 / 图件预览，下方结果表。"""
         self.files = FileTable()
         self.files.table.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         # V2.9.5R2：窄窗口下列头不被均匀挤压；文件名/剔除原因各占可伸缩列
@@ -257,7 +310,10 @@ class PhiPage(PageBase):
         right.addWidget(self._group_tab_host)
         right.addWidget(box_res)
         right.setSizes([520, 240])
+        return right
 
+    def _build_settings_column(self) -> None:
+        """右栏：出图设置 + 实时生图预览接线。"""
         self.settings_panel = UnifiedSettingsPanel()
         self.settings_panel.ed_formats.setText(self.params.ed_formats.text())
         self.settings_panel.ed_formats.textChanged.connect(
@@ -270,6 +326,9 @@ class PhiPage(PageBase):
         self.live_preview.failed.connect(lambda m: self.logged.emit("WARNING", f"实时预览失败：{m}"))
         self.chk_live.toggled.connect(self.live_preview.set_enabled)
         self.settings_panel.changed.connect(self._schedule_live_preview)
+
+    def _build_body(self, left_tabs: QTabWidget, right: QSplitter) -> QSplitter:
+        """三栏 splitter；窄窗口时由 :meth:`_apply_responsive_layout` 折成两栏。"""
         body = QSplitter(Qt.Horizontal)
         right.setMinimumWidth(380)
         self.settings_panel.setMinimumWidth(260)
@@ -287,48 +346,7 @@ class PhiPage(PageBase):
         self._body = body
         self.btn_settings_toggle.toggled.connect(lambda _: self._apply_responsive_layout())
         self._apply_responsive_layout()
-
-        # ── 底：进度 + 导出 ──
-        self.export = ExportBar(on_workbook=self._export_workbook,
-                                on_dashboard=self._export_dashboard)
-        # V2.3 FR-24.2/24.6：导出条的常规反馈走状态栏（不弹模态）。
-        # A15（V2.x 审查）：`canvas.status_message` 已在创建画布处连接过一次，
-        # 这里**再连一次**会让每条画布消息在状态栏出现两遍（与 F2 同类）。
-        self.export.message.connect(self.status)
-        # V2.6 FR-40.5：结果区动作条（打开输出 / 复制结果 / 下一步 / 重试）
-        self.actions = ResultActions(
-            self, next_target="plot",
-            next_text="下一步：③ 图件预览 / 定稿出图")
-        self.actions.message.connect(self.status)
-        self.actions.next_step_requested.connect(self.next_step_requested.emit)
-        self.actions.retry_requested.connect(self._run)
-        lay = QVBoxLayout(self)
-        lay.setContentsMargins(0, 0, 0, 0)
-        lay.addWidget(self.header())
-        self.setToolTip("可把数据目录 / 光谱文件直接拖到这里")
-        lay.addLayout(top1)
-        lay.addLayout(top2)
-        lay.addLayout(top3)
-        # A25.1（V2.3 §12）：结果过期横幅（参数改了但结果没重算时出现，非模态）
-        self.banner = StaleBanner()
-        self.banner.action_requested.connect(self._on_banner_action)
-        lay.addWidget(self.banner)
-        lay.addWidget(body, 1)
-        lay.addWidget(self.progress_row())
-        lay.addWidget(self.actions)
-        lay.addWidget(self.export)
-
-        # A25.2（V2.3 §12）：结果表 / 组页签右键菜单；文件表与画布的右键由各自组件实现
-        self.table.setContextMenuPolicy(Qt.CustomContextMenu)
-        self.table.customContextMenuRequested.connect(self._on_result_context_menu)
-        self.group_tabs.setContextMenuPolicy(Qt.CustomContextMenu)
-        self.group_tabs.customContextMenuRequested.connect(
-            self._on_group_tab_context_menu)
-        self.files.status_message.connect(self.status)
-        # 勾选状态来自配置（gui.lazy_preview），改动即持久化到 config.yaml
-        self.chk_lazy.blockSignals(True)
-        self.chk_lazy.setChecked(self._lazy_enabled())
-        self.chk_lazy.blockSignals(False)
+        return body
 
     # ══════════════ 懒渲染开关（P1） ══════════════
     def _lazy_enabled(self) -> bool:
