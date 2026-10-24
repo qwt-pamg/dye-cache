@@ -37,6 +37,7 @@ from matplotlib.figure import Figure
 from matplotlib.font_manager import FontProperties
 from matplotlib.lines import Line2D
 from matplotlib.patches import Rectangle
+from ui import theme
 
 #: 工作视图提示（UI 明示"不等于定稿产物"）
 WORK_VIEW_HINT = "工作视图（会话级，≠ 定稿产物；定稿请点「生成定稿图」）"
@@ -119,7 +120,7 @@ class LivePlotCanvas(QWidget):
         self.canvas = FigureCanvasQTAgg(self.figure)
         self.toolbar = NavigationToolbar2QT(self.canvas, self)
         self.lbl_hint = QLabel(WORK_VIEW_HINT)
-        self.lbl_hint.setStyleSheet("color: #6b7280; font-size: 11px;")
+        theme.mark(self.lbl_hint, "hint")
         bar = QHBoxLayout()
         bar.setContentsMargins(0, 0, 0, 0)
         bar.addWidget(self.toolbar)

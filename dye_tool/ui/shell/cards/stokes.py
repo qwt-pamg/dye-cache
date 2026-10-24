@@ -8,7 +8,6 @@ import math
 from pathlib import Path
 from typing import Optional
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QAbstractItemView
 from PySide6.QtWidgets import QComboBox
 from PySide6.QtWidgets import QFileDialog
@@ -34,6 +33,7 @@ from core.report.stokes_table import group_from_path
 from core.report.stokes_table import row_from_spectra
 from core.report.stokes_table import write_stokes_csv
 from ui.pages.base_page import PageBase
+from ui import theme
 
 log = logging.getLogger("dye_tool.ui.analysis")
 
@@ -103,7 +103,7 @@ class StokesPanel(PageBase):
         bar = QHBoxLayout()
         self.btn_dir = QPushButton("选择光谱目录…")
         self.lbl_dir = QLabel("未选择目录")
-        self.lbl_dir.setStyleSheet("color: #555;")
+        theme.mark(self.lbl_dir, "muted")
         bar.addWidget(self.btn_dir)
         bar.addWidget(self.lbl_dir, 1)
         lay.addLayout(bar)
@@ -111,7 +111,7 @@ class StokesPanel(PageBase):
             "每次只选一对：左侧吸收谱 + 右侧发射谱**各一支**（单选，点击第二个即替换）；"
             "未选齐时「加入对比表」禁用，也不会自动配对/自动入表。")
         hint.setWordWrap(True)
-        hint.setStyleSheet("color: #6b7280; font-size: 11px;")
+        theme.mark(hint, "hint")
         lay.addWidget(hint)
 
         self.lst_abs = QListWidget()
@@ -137,13 +137,13 @@ class StokesPanel(PageBase):
         self.lbl_dlam = QLabel("Δλ = —")
         self.lbl_dnu = QLabel("Δν̃ = —")
         for lbl in (self.lbl_abs, self.lbl_em, self.lbl_dlam, self.lbl_dnu):
-            lbl.setStyleSheet("font-weight: bold;")
+            theme.mark(lbl, "strong")
             preview_row.addWidget(lbl)
         preview_row.addStretch(1)
         lay.addLayout(preview_row)
         self.lbl_preview = QLabel("未选齐：请各选一支吸收谱与发射谱")
         self.lbl_preview.setWordWrap(True)
-        self.lbl_preview.setStyleSheet("color: #6b7280;")
+        theme.mark(self.lbl_preview, "muted")
         lay.addWidget(self.lbl_preview)
 
         row = QHBoxLayout()
@@ -194,7 +194,7 @@ class StokesPanel(PageBase):
 
         self.lbl_csv = QLabel("导出：—")
         self.lbl_csv.setWordWrap(True)
-        self.lbl_csv.setStyleSheet("color: #6b7280; font-size: 11px;")
+        theme.mark(self.lbl_csv, "hint")
         lay.addWidget(self.lbl_csv)
         lay.addWidget(self.progress_row())
 
@@ -422,7 +422,7 @@ class StokesPanel(PageBase):
                         it.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
                     if reason and c in (self.COL_LAM_ABS, self.COL_LAM_EM,
                                         self.COL_DLAM, self.COL_DNU):
-                        it.setForeground(QColor(150, 150, 150))
+                        it.setForeground(theme.color("text_subtle"))
                         it.setToolTip(f"不可计算：{reason}")
                     self.tbl.setItem(vr, c, it)
         finally:

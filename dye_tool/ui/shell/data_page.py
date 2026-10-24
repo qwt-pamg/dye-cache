@@ -27,6 +27,7 @@ from core.paths import app_root
 from ui.pages.base_page import PageBase
 from ui.widgets.dye_time_panel import DyeTimePanel
 from ui.widgets.file_table import FileTable
+from ui import theme
 
 log = logging.getLogger("dye_tool.ui.data")
 
@@ -137,7 +138,7 @@ class DataPage(PageBase):
         lay.addLayout(tpl)
 
         self.lbl_dir = QLabel("尚未选择数据目录")
-        self.lbl_dir.setStyleSheet("color: #4b5563;")
+        theme.mark(self.lbl_dir, "muted")
         self.lbl_dir.setWordWrap(True)
         lay.addWidget(self.lbl_dir)
         lay.addWidget(self.progress_row())
@@ -155,7 +156,7 @@ class DataPage(PageBase):
         # 底部：可疑行提示
         self.lbl_suspect = QLabel("")
         self.lbl_suspect.setWordWrap(True)
-        self.lbl_suspect.setStyleSheet("color: #B45309;")
+        theme.mark(self.lbl_suspect, "warn")
         lay.addWidget(self.lbl_suspect)
 
         self.btn_dir.clicked.connect(self._choose_dir)

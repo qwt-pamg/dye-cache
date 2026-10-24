@@ -21,6 +21,7 @@ matplotlib.use("QtAgg")                                 # 与 PySide6 配套的�
 from matplotlib.backends.backend_qtagg import (FigureCanvasQTAgg,
                                                NavigationToolbar2QT)
 from matplotlib.figure import Figure
+from ui import theme
 
 
 #: 占位文字用的中文字体候选（按常见 Windows 环境排序）
@@ -146,7 +147,7 @@ class CanvasPanel(QWidget):
         QShortcut(QKeySequence("Ctrl+Shift+C"), self,
                   activated=self.copy_current_image)
         self.lbl_pending = QLabel("")
-        self.lbl_pending.setStyleSheet("color: #B45309;")   # 琥珀色：提示"还在渲"
+        theme.mark(self.lbl_pending, "warn")   # 琥珀色：提示"还在渲"
         self.lbl_pending.setToolTip(
             "预览档先画首图让你尽快看到结果，其余图件在后台继续渲染；\n"
             "渲染完成的图会立刻出现在这个下拉里。")
@@ -162,7 +163,7 @@ class CanvasPanel(QWidget):
         self.canvas = MplCanvas(self, width=8.5, height=5.5)
         self.toolbar = NavigationToolbar2QT(self.canvas, self)
         hint = QLabel("提示：双击画布可放大；工具栏支持缩放/平移/另存")
-        hint.setStyleSheet("color: gray;")
+        theme.mark(hint, "subtle")
         self.canvas.mpl_connect("button_press_event", self._on_dclick)
 
         lay = QVBoxLayout(self)

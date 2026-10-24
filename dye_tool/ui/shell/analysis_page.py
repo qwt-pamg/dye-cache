@@ -28,6 +28,7 @@ from ui.shell.cards.stokes import StokesPanel
 from ui.shell.cards.wavelength import WavelengthPanel
 from ui.shell.cards.common import (_INVALID_BG, _ParamTable,
                                    _mark_param_cell)
+from ui import theme
 
 log = logging.getLogger("dye_tool.ui.analysis")
 
@@ -83,7 +84,7 @@ class AnalysisPage(QWidget):
         lv = QVBoxLayout(left)
         lv.setContentsMargins(10, 10, 6, 10)
         title = QLabel("我要做什么？")
-        title.setStyleSheet("font-size: 14px; font-weight: bold;")
+        theme.mark(title, "section")
         lv.addWidget(title)
         self.list = QListWidget()
         self.list.setObjectName("taskList")
@@ -99,7 +100,7 @@ class AnalysisPage(QWidget):
         lv.addWidget(self.list, 1)
         self.lbl_batch = QLabel("当前批次：未载入")
         self.lbl_batch.setWordWrap(True)
-        self.lbl_batch.setStyleSheet("color: #6b7280; font-size: 11px;")
+        theme.mark(self.lbl_batch, "hint")
         lv.addWidget(self.lbl_batch)
         # V2.6 FR-40.4：空态可点击引导 → ①数据页载入数据（并聚焦入口）
         self.btn_empty_data = QPushButton("去①数据页载入数据…")

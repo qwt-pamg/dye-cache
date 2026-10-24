@@ -25,18 +25,22 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFileDialog,
                                QTextEdit, QVBoxLayout, QWidget)
 
 from core.explain import level_zh
+from ui import theme
 
-#: 级别 → 颜色
-LEVEL_COLOR = {"DEBUG": "#888888", "INFO": "#204060", "WARNING": "#B8860B",
-               "ERROR": "#C81E1E", "CRITICAL": "#8B0000"}
+#: 级别 → 主题颜色令牌（ui/theme.py；深浅色下都可读）
+LEVEL_COLOR = {"DEBUG": "text_subtle", "INFO": "text", "WARNING": "warn",
+               "ERROR": "danger", "CRITICAL": "danger"}
 LEVEL_ORDER = {"DEBUG": 10, "INFO": 20, "WARNING": 30, "ERROR": 40, "CRITICAL": 50}
 
 #: 内部记录上限（O9）。视图本来就有 20000 行上限，但 _records 列表**没有**，
 #: 长时间跑（反复分析）会一直涨；这里用 deque(maxlen) 对齐视图上限。
 LOG_RECORDS_MAX = 20000
 
-#: 命中高亮样式（toHtml 里可断言 background-color / font-weight）
-HIT_STYLE = "background-color:#fff3a0;font-weight:bold"
+#: 命中高亮样式（toHtml 里可断言 background-color / font-weight）；底色取主题 hit_bg
+
+
+def hit_style() -> str:
+    return f"background-color:{theme.hexc('hit_bg')};font-weight:bold"
 
 
 class LogView(QWidget):
@@ -58,7 +62,7 @@ class LogView(QWidget):
         self.view = QTextEdit()
         self.view.setReadOnly(True)
         self.view.document().setMaximumBlockCount(20000)   # 防止长时间运行内存膨胀
-        self.view.setStyleSheet("font-family: Consolas, monospace; font-size: 12px;")
+        theme.mark(self.view, "mono")
 
         self.cmb = QComboBox()
         # FR-9.4：界面显示中文级别名（写盘的 run.log 仍保留英文，便于检索）
@@ -84,7 +88,7 @@ class LogView(QWidget):
         self.ed_search.setToolTip("大小写不敏感；与级别过滤叠加。清空即恢复全部。")
         self.ed_search.textChanged.connect(self._on_search_changed)
         self.lbl_hits = QLabel("")
-        self.lbl_hits.setStyleSheet("color: #6b7280; font-size: 11px;")
+        theme.mark(self.lbl_hits, "hint")
 
         # V2.6 FR-40.2：复制选中 / 复制全部
         self.btn_copy_sel = QPushButton("复制选中")
@@ -187,14 +191,14 @@ class LogView(QWidget):
         for i, part in enumerate(parts):
             esc = html.escape(part).replace("\n", "<br>")
             if i % 2 == 1:
-                esc = f'<span style="{HIT_STYLE}">{esc}</span>'
+                esc = f'<span style="{hit_style()}">{esc}</span>'
             out.append(esc)
         return "".join(out)
 
     @classmethod
     def _html(cls, level: str, msg: str, keyword: str = "") -> str:
         """一条日志的 HTML：中文级别名 + 颜色（FR-9.4）+ 命中高亮（FR-40.2）。"""
-        color = LEVEL_COLOR.get(level, "#000000")
+        color = theme.hexc(LEVEL_COLOR.get(level, "text"))
         body = cls._highlight(msg, keyword)
         return (f'<span style="color:{color}">'
                 f'[{html.escape(level_zh(level))}] {body}</span>')

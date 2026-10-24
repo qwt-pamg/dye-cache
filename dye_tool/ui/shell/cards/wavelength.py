@@ -20,6 +20,7 @@ from core.paths import app_root
 from ui.pages.base_page import PageBase
 from ui.pages.phi_page import ResultActions
 from ui.shell.cards.common import _ParamTable, _mark_param_cell
+from ui import theme
 
 log = logging.getLogger("dye_tool.ui.analysis")
 
@@ -74,7 +75,7 @@ class WavelengthPanel(PageBase):
         hint = QLabel("逐行填目标波长（nm）；Tab/回车换行，可直接从 Excel 粘贴一列。"
                       "空/非数值/≤0/重复会在单元格标红并提示。")
         hint.setWordWrap(True)
-        hint.setStyleSheet("color: #6b7280; font-size: 11px;")
+        theme.mark(hint, "hint")
         lay.addWidget(hint)
         self.tbl_wl = _ParamTable(editable_col=0, allow_expand=True)
         self.tbl = self.tbl_wl                # 通用别名（脚本/测试可用）

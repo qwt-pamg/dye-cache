@@ -20,6 +20,7 @@ from ui.pages.base_page import PageBase
 
 log = logging.getLogger("dye_tool.ui.analysis")
 from core.paths import resolve_out_root
+from ui import theme
 
 _QUEUE_STATUS_ZH = {"pending": "排队中", "running": "运行中",
                     "ok": "完成", "failed": "失败", "cancelled": "取消"}
@@ -61,7 +62,7 @@ class BatchQueuePanel(PageBase):
         hint = QLabel("提示：队列目录**不经①数据页**，整定只来自各目录自己的 "
                       "dye_batch.yaml；①数据页的会话整定/染料名不适用于队列。")
         hint.setWordWrap(True)
-        hint.setStyleSheet("color: #6b7280; font-size: 11px;")
+        theme.mark(hint, "hint")
         lay.addWidget(hint)
         self.list_dirs = QListWidget()
         self.list_dirs.setObjectName("queueDirList")
@@ -88,7 +89,7 @@ class BatchQueuePanel(PageBase):
         row = QHBoxLayout()
         self.lbl_summary = QLabel("汇总表：尚未生成")
         self.lbl_summary.setWordWrap(True)
-        self.lbl_summary.setStyleSheet("color: #6b7280;")
+        theme.mark(self.lbl_summary, "muted")
         self.btn_open_file = QPushButton("打开汇总表")
         self.btn_open_dir = QPushButton("打开所在文件夹")
         self.btn_open_file.setEnabled(False)

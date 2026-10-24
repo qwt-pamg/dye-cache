@@ -24,6 +24,7 @@ from ui.pages.base_page import PageBase
 from ui.pages.spectra_page import SpectraPage
 from ui.pages.stack_page import StackPage
 from ui.widgets.param_panel import ParamPanel
+from ui import theme
 
 log = logging.getLogger("dye_tool.ui.shell")
 
@@ -56,11 +57,11 @@ class PlotPage(QWidget):
         lay = QVBoxLayout(self)
         lay.setContentsMargins(10, 10, 10, 10)
         head = QLabel("作图台")
-        head.setStyleSheet("font-size: 15px; font-weight: bold;")
+        theme.mark(head, "title")
         sub = QLabel("按数据类型分工：紫外（吸收谱）与荧光（发射谱）。"
                      "导出文件命名与 V1.3 完全一致（重组只是界面层）。")
         sub.setWordWrap(True)
-        sub.setStyleSheet("color: #555;")
+        theme.mark(sub, "muted")
         lay.addWidget(head)
         lay.addWidget(sub)
 

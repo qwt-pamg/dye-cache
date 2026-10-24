@@ -22,6 +22,7 @@ from ui.pages.base_page import PageBase
 
 log = logging.getLogger("dye_tool.ui.analysis")
 from core.paths import resolve_out_root
+from ui import theme
 
 class PeaksPanel(PageBase):
     """V2.7 A 道（V2.6 D 道结转）：FR-37 峰分析（②第 8 卡）。
@@ -66,7 +67,7 @@ class PeaksPanel(PageBase):
                       "≥ 动态范围 2%；相邻峰 ≥ 5 点；单谱最多 20 峰（按突出度降序截断）；"
                       "NaN 断点分段检测、不跨段合并；全谱范围。")
         hint.setWordWrap(True)
-        hint.setStyleSheet("color: #6b7280; font-size: 11px;")
+        theme.mark(hint, "hint")
         lay.addWidget(hint)
         self.tbl = QTableWidget()
         self.tbl.setObjectName("peaksTable")

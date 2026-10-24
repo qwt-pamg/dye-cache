@@ -29,7 +29,7 @@ class NavBar(QWidget):
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
-        self.setFixedWidth(128)
+        self.setFixedWidth(176)
         self._keys: list[str] = []
         self._badges: dict[str, str] = {}
         self._build()
@@ -42,13 +42,12 @@ class NavBar(QWidget):
         title = QLabel("dye_tool")
         title.setObjectName("navTitle")
         title.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        title.setContentsMargins(8, 14, 8, 2)
+        title.setContentsMargins(14, 16, 8, 2)
         lay.addWidget(title)
         self.lbl_context = QLabel("未选择批次")
         self.lbl_context.setObjectName("navContext")
         self.lbl_context.setWordWrap(True)
-        self.lbl_context.setContentsMargins(8, 0, 8, 8)
-        self.lbl_context.setStyleSheet("color: #6b7280; font-size: 11px;")
+        self.lbl_context.setContentsMargins(14, 0, 8, 10)
         lay.addWidget(self.lbl_context)
 
         self.list = QListWidget()
@@ -56,6 +55,7 @@ class NavBar(QWidget):
         self.list.setFrameShape(QFrame.NoFrame)
         self.list.setSpacing(2)
         self.list.setTextElideMode(Qt.ElideRight)
+        self.list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         for key, label, tip in NAV_ITEMS:
             item = QListWidgetItem(label)
             item.setData(Qt.UserRole, key)
@@ -68,7 +68,7 @@ class NavBar(QWidget):
         self.lbl_status = QLabel("")
         self.lbl_status.setObjectName("navStatus")
         self.lbl_status.setWordWrap(True)
-        self.lbl_status.setContentsMargins(8, 6, 8, 12)
+        self.lbl_status.setContentsMargins(14, 6, 8, 12)
         lay.addWidget(self.lbl_status)
 
     # ── 对外 API ──

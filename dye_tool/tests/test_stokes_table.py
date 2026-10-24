@@ -38,8 +38,9 @@ pytestmark = pytest.mark.slow
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 #: A41.6 零新配置键：GUI 会话态基线键集
+#: theme 是前端重构（浅色/深色主题）有意新增的界面键
 GUI_BASELINE_KEYS = {"recent_dirs", "max_recent", "out_root", "show_welcome",
-                     "lazy_preview", "window", "nav"}
+                     "lazy_preview", "window", "nav", "theme"}
 
 #: 对比表列序（与 core.report.stokes_table.STOKES_COLUMNS 一致）
 COL_GROUP, COL_ABS, COL_EM, COL_LA, COL_LE, COL_DL, COL_DNU, COL_TIME = range(8)

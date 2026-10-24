@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (QApplication, QDialog, QFileDialog, QHBoxLayout,
 from core.config import default_config, load_config, save_config
 from core.paths import app_root, config_path as _cfg_path
 from ui.workers import Job
+from ui import theme
 
 log = logging.getLogger("dye_tool.ui.page")
 
@@ -40,10 +41,10 @@ class ErrorDialog(QDialog):
         self._text = f"{summary}\n\n{detail}"
         head = QLabel(summary)
         head.setWordWrap(True)
-        head.setStyleSheet("font-weight: bold; color: #C81E1E;")
+        theme.mark(head, "danger")
         self.view = QPlainTextEdit(detail)
         self.view.setReadOnly(True)
-        self.view.setStyleSheet("font-family: Consolas, monospace; font-size: 12px;")
+        theme.mark(self.view, "mono")
         btn_copy = QPushButton("复制错误信息")
         btn_copy.clicked.connect(self._copy)
         btn_close = QPushButton("关闭")
@@ -89,9 +90,9 @@ class PageBase(QWidget):
         """页头（标题 + 说明）。"""
         w = QWidget()
         lbl_t = QLabel(self.TITLE)
-        lbl_t.setStyleSheet("font-size: 15px; font-weight: bold;")
+        theme.mark(lbl_t, "title")
         lbl_s = QLabel(self.SUBTITLE)
-        lbl_s.setStyleSheet("color: #555;")
+        theme.mark(lbl_s, "muted")
         lbl_s.setWordWrap(True)
         lay = QVBoxLayout(w)
         lay.setContentsMargins(0, 0, 0, 0)

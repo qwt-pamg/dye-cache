@@ -37,6 +37,7 @@ from ui.widgets.live_plot import LivePlotCanvas
 
 log = logging.getLogger("dye_tool.ui.analysis")
 from core.report.stokes_table import row_from_spectra
+from ui import theme
 
 _CHAR_COLUMNS_FALLBACK = (
     "条件/溶剂", "化合物/组别", "吸收谱文件", "发射谱文件",
@@ -180,7 +181,7 @@ class PhotophysicsPanel(PageBase):
         bar = QHBoxLayout()
         self.btn_phi_dir = QPushButton("选择光谱目录…")
         self.lbl_phi_dir = QLabel("未选择目录")
-        self.lbl_phi_dir.setStyleSheet("color: #555;")
+        theme.mark(self.lbl_phi_dir, "muted")
         bar.addWidget(self.btn_phi_dir)
         bar.addWidget(self.lbl_phi_dir, 1)
         lay.addLayout(bar)
@@ -188,7 +189,7 @@ class PhotophysicsPanel(PageBase):
                       "I = 发射谱积分强度，A = λex 处吸光度（建议 A ≤ 0.05）。"
                       "数值全部复用 core.analysis.fluorescence_qy，不重写公式。")
         hint.setWordWrap(True)
-        hint.setStyleSheet("color: #6b7280; font-size: 11px;")
+        theme.mark(hint, "hint")
         lay.addWidget(hint)
 
         split = QSplitter(Qt.Horizontal)
@@ -217,7 +218,7 @@ class PhotophysicsPanel(PageBase):
         self.btn_eps_from = QPushButton("从 ε 结果填入")
         self.btn_eps_from.setToolTip("从②分析页「摩尔消光系数 ε」卡最近一次成功结果取 ε")
         self.lbl_eps_source = QLabel("ε 来源：手填")
-        self.lbl_eps_source.setStyleSheet("color: #6b7280; font-size: 11px;")
+        theme.mark(self.lbl_eps_source, "hint")
         eps_row = QHBoxLayout()
         eps_row.addWidget(self.sp_eps, 1)
         eps_row.addWidget(self.btn_eps_from)
@@ -232,7 +233,7 @@ class PhotophysicsPanel(PageBase):
         self.lbl_lam_note = QLabel(
             "λex 只需落在吸收谱范围；发射积分取发射谱自身范围"
             "（仪器 EM 扫描可从 λex 之后开始，V2.6 修正）")
-        self.lbl_lam_note.setStyleSheet("color: #6b7280; font-size: 11px;")
+        theme.mark(self.lbl_lam_note, "hint")
         self.lbl_lam_note.setWordWrap(True)
         form.addRow("", self.lbl_lam_note)
         from ui.help_texts import PARAM_HELP
@@ -261,17 +262,17 @@ class PhotophysicsPanel(PageBase):
         self.lbl_phi = QLabel("φ = —")
         self.lbl_brightness = QLabel("亮度 = —")
         for lb in (self.lbl_phi_a, self.lbl_phi_i, self.lbl_phi, self.lbl_brightness):
-            lb.setStyleSheet("font-weight: bold;")
+            theme.mark(lb, "strong")
             preview.addWidget(lb)
         preview.addStretch(1)
         lay.addLayout(preview)
         self.lbl_phi_warn = QLabel("")
         self.lbl_phi_warn.setWordWrap(True)
-        self.lbl_phi_warn.setStyleSheet("color: #B45309; font-size: 11px;")
+        theme.mark(self.lbl_phi_warn, "warnHint")
         lay.addWidget(self.lbl_phi_warn)
         self.lbl_phi_msg = QLabel("未选择配对：请在左右列表各选一支谱")
         self.lbl_phi_msg.setWordWrap(True)
-        self.lbl_phi_msg.setStyleSheet("color: #6b7280;")
+        theme.mark(self.lbl_phi_msg, "muted")
         lay.addWidget(self.lbl_phi_msg)
         row = QHBoxLayout()
         self.btn_compute_phi = QPushButton("计算 φ")
@@ -299,7 +300,7 @@ class PhotophysicsPanel(PageBase):
         hint = QLabel("单指数衰减 I(t)=I∞+(I0−I∞)·e^(−k·t)；可关平台项退化为 I0·e^(−k·t)。"
                       "时间统一换算为分钟；k/t½/loss%/R² 复用 core.analysis.photobleach。")
         hint.setWordWrap(True)
-        hint.setStyleSheet("color: #6b7280; font-size: 11px;")
+        theme.mark(hint, "hint")
         lay.addWidget(hint)
 
         src_row = QHBoxLayout()
@@ -365,13 +366,13 @@ class PhotophysicsPanel(PageBase):
         self.lbl_bleach_r2 = QLabel("R² = —")
         for lb in (self.lbl_bleach_k, self.lbl_bleach_thalf,
                    self.lbl_bleach_loss, self.lbl_bleach_r2):
-            lb.setStyleSheet("font-weight: bold;")
+            theme.mark(lb, "strong")
             preview.addWidget(lb)
         preview.addStretch(1)
         lay.addLayout(preview)
         self.lbl_bleach_msg = QLabel("请先载入时间序列谱目录或两列 CSV")
         self.lbl_bleach_msg.setWordWrap(True)
-        self.lbl_bleach_msg.setStyleSheet("color: #6b7280;")
+        theme.mark(self.lbl_bleach_msg, "muted")
         lay.addWidget(self.lbl_bleach_msg)
 
         row = QHBoxLayout()
@@ -413,7 +414,7 @@ class PhotophysicsPanel(PageBase):
         hint = QLabel("行 = 化合物 × 条件；缺项留空可编辑。与 FR-41 Stokes 表同一模块"
                       "（core/report/characterization.py），可导入 Stokes 行后统一导出。")
         hint.setWordWrap(True)
-        hint.setStyleSheet("color: #6b7280; font-size: 11px;")
+        theme.mark(hint, "hint")
         lay.addWidget(hint)
 
         filt = QHBoxLayout()
@@ -471,7 +472,7 @@ class PhotophysicsPanel(PageBase):
         lay.addWidget(self.tbl, 1)
         self.lbl_char_export = QLabel("导出：—")
         self.lbl_char_export.setWordWrap(True)
-        self.lbl_char_export.setStyleSheet("color: #6b7280; font-size: 11px;")
+        theme.mark(self.lbl_char_export, "hint")
         lay.addWidget(self.lbl_char_export)
 
         self.btn_char_delete.clicked.connect(lambda *_: self.delete_selected_rows())

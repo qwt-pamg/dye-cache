@@ -7,6 +7,7 @@ import logging
 from pathlib import Path
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
+from PySide6.QtGui import QActionGroup
 from PySide6.QtGui import QKeySequence
 from PySide6.QtWidgets import QDialog
 from PySide6.QtWidgets import QDockWidget
@@ -17,6 +18,7 @@ from PySide6.QtWidgets import QMessageBox
 from PySide6.QtWidgets import QPlainTextEdit
 from PySide6.QtWidgets import QProgressBar
 from PySide6.QtWidgets import QPushButton
+from PySide6.QtWidgets import QToolButton
 from PySide6.QtWidgets import QVBoxLayout
 from core.config import default_config
 from core.synthetic import make_synthetic
@@ -25,6 +27,7 @@ from ui.pages.base_page import ErrorDialog
 from ui.widgets.export_bar import open_folder
 from ui.widgets.log_view import LogView
 from ui.workers import Job
+from ui import theme
 from ui.shell.window_parts import ABOUT_TEXT, FAQ_TEXT, MIN_WINDOW_H, MIN_WINDOW_W, NAMING_HELP, PREF_WINDOW_H, PREF_WINDOW_W, PROJECT_ROOT, WINDOW_SCREEN_MARGIN
 
 log = logging.getLogger("dye_tool.ui.main_window")
@@ -38,8 +41,12 @@ class MainWindowActionsMixin:
         dock.setAllowedAreas(Qt.BottomDockWidgetArea | Qt.RightDockWidgetArea)
         self.addDockWidget(Qt.BottomDockWidgetArea, dock)
         self.log_dock = dock
-        # 日志区默认只占底部一条，避免挤压主工作区
+        # 日志区默认收起，把高度留给工作区；状态栏「运行日志」按钮展开，
+        # 收起期间的警告计数显示在按钮上，ERROR 及以上自动展开
         self.resizeDocks([dock], [200], Qt.Vertical)
+        dock.hide()
+        self._unseen_warnings = 0
+        dock.visibilityChanged.connect(self._on_log_dock_visibility)
 
     def _build_menu(self) -> None:
         bar = self.menuBar()
@@ -94,7 +101,7 @@ class MainWindowActionsMixin:
         m_view = bar.addMenu("视图(&V)")
         self.act_flow = QAction("任务流布局（默认，重启生效）", self, checkable=True)
         self.act_classic = QAction("经典页签布局（V1.x，重启生效）", self, checkable=True)
-        grp = __import__("PySide6.QtGui", fromlist=["QActionGroup"]).QActionGroup(self)
+        grp = QActionGroup(self)
         grp.addAction(self.act_flow)
         grp.addAction(self.act_classic)
         grp.setExclusive(True)
@@ -107,6 +114,23 @@ class MainWindowActionsMixin:
         act = QAction("主页", self)
         act.triggered.connect(lambda: self.goto("home"))
         m_view.addAction(act)
+        act_log = self.log_dock.toggleViewAction()
+        act_log.setText("运行日志")
+        act_log.setShortcut(QKeySequence("Ctrl+L"))
+        m_view.addAction(act_log)
+        m_view.addSeparator()
+        m_theme = m_view.addMenu("界面主题")
+        grp_theme = QActionGroup(self)
+        grp_theme.setExclusive(True)
+        cur_theme = str((self.cfg.get("gui") or {}).get("theme") or "light")
+        self.theme_actions = {}
+        for key in theme.THEMES:
+            a = QAction(theme.THEME_LABELS[key], self, checkable=True)
+            a.setChecked(key == cur_theme)
+            a.triggered.connect(lambda _=False, k=key: self._switch_theme(k))
+            grp_theme.addAction(a)
+            m_theme.addAction(a)
+            self.theme_actions[key] = a
 
         m_help = bar.addMenu("帮助(&H)")
         # V2.6 FR-40.3：帮助 →「快捷键一览…」（分组清单，与实际绑定一致）
@@ -145,6 +169,13 @@ class MainWindowActionsMixin:
         self.on_status(f"布局已保存：下次启动使用「{name}」（当前窗口不变）")
         self.on_logged("INFO", f"布局切换已保存：gui.nav={mode}（重启生效）")
 
+    def _switch_theme(self, mode: str) -> None:
+        """切换界面主题：立即整窗生效并写回 ``gui.theme``。"""
+        self.cfg.setdefault("gui", {})["theme"] = mode
+        theme.apply(mode)
+        self._save_cfg()
+        self.on_status(f"界面主题：{theme.THEME_LABELS.get(mode, mode)}")
+
     def _validate_cfg(self) -> None:
         """当前配置全量校验（FR-10.1）。"""
         from core.plotstyle import validate_config
@@ -165,29 +196,22 @@ class MainWindowActionsMixin:
         self.bar.setMaximumWidth(240)
         self.bar.setVisible(False)
         self.lbl_stage = QLabel("就绪")
+        self.btn_log = QToolButton()
+        self.btn_log.setText("运行日志")
+        self.btn_log.setToolTip("展开 / 收起运行日志（Ctrl+L）")
+        self.btn_log.setCheckable(True)
+        self.btn_log.toggled.connect(self.log_dock.setVisible)
         self.statusBar().addPermanentWidget(self.lbl_stage)
         self.statusBar().addPermanentWidget(self.bar)
+        self.statusBar().addPermanentWidget(self.btn_log)
         self.statusBar().showMessage(
             "就绪 — 主页「打开我的数据目录…」或「一键演示」开始"
             if self.layout_mode == "flow"
             else "就绪 — 请从「① Φ_Δ 分析」页选择数据目录开始")
 
     def _apply_style(self) -> None:
-        """统一风格（设计文档 §5）：温和的浅色主题，页签与分组框一致。"""
-        self.setStyleSheet("""
-            QMainWindow { background: #f7f7f9; }
-            QTabWidget::pane { border: 1px solid #d8d8dd; background: white; }
-            QTabBar::tab { padding: 7px 16px; background: #ececf1;
-                           border: 1px solid #d8d8dd; border-bottom: none;
-                           margin-right: 2px; }
-            QTabBar::tab:selected { background: white; font-weight: bold; }
-            QGroupBox { border: 1px solid #d8d8dd; border-radius: 4px;
-                        margin-top: 10px; padding-top: 6px; background: white; }
-            QGroupBox::title { subcontrol-origin: margin; left: 10px;
-                               padding: 0 4px; color: #333; }
-            QPushButton { padding: 5px 12px; }
-            QTableWidget { gridline-color: #ececf1; }
-        """)
+        """整窗主题（ui/theme.py）：按 ``gui.theme`` 装 Fusion + 色板 + 全局 QSS。"""
+        theme.apply((self.cfg.get("gui") or {}).get("theme", "light"))
 
     # ══════════════ V2.6 FR-38.1 / V2.3 FR-24：窗口几何 / Esc 取消 ══════════════
     @staticmethod
@@ -270,6 +294,26 @@ class MainWindowActionsMixin:
         self.log_view.append(level, msg)
         if level in ("WARNING", "ERROR", "CRITICAL"):
             self.statusBar().showMessage(f"[{level}] {msg}", 8000)
+            if level != "WARNING":
+                self.log_dock.show()
+            elif not self.log_dock.isVisible():
+                self._unseen_warnings += 1
+                self._update_log_button()
+
+    def _on_log_dock_visibility(self, visible: bool) -> None:
+        if visible:
+            self._unseen_warnings = 0
+        btn = getattr(self, "btn_log", None)
+        if btn is not None and btn.isChecked() != visible:
+            btn.setChecked(visible)
+        self._update_log_button()
+
+    def _update_log_button(self) -> None:
+        btn = getattr(self, "btn_log", None)
+        if btn is None:
+            return
+        n = self._unseen_warnings
+        btn.setText(f"运行日志 · {n} 条警告" if n else "运行日志")
 
     def on_status(self, msg: str) -> None:
         """状态栏消息。"""
@@ -378,7 +422,7 @@ class MainWindowActionsMixin:
         d.resize(640, 520)
         view = QPlainTextEdit(text)
         view.setReadOnly(True)
-        view.setStyleSheet("font-family: Consolas, monospace; font-size: 12px;")
+        theme.mark(view, "mono")
         btn = QPushButton("关闭")
         btn.clicked.connect(d.accept)
         lay = QVBoxLayout(d)

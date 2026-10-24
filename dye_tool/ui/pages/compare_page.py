@@ -24,6 +24,7 @@ from ui.pages.base_page import PageBase
 from ui.pages.phi_page import ResultActions
 from ui.widgets.export_bar import ExportBar
 from ui.widgets.mpl_canvas import CanvasPanel
+from ui import theme
 
 
 def _dspin(lo, hi, val, step=1.0, dec=2):
@@ -70,9 +71,9 @@ class ComparePage(PageBase):
         self.btn_dir = QPushButton("选择数据目录…")
         self.btn_group = QPushButton("重新分组")
         self.btn_run = QPushButton("▶ 开始对比")
-        self.btn_run.setStyleSheet("font-weight: bold;")
+        theme.mark(self.btn_run, "primary")
         self.lbl_dir = QLabel("未选择目录")
-        self.lbl_dir.setStyleSheet("color: #555;")
+        theme.mark(self.lbl_dir, "muted")
         self.btn_dir.clicked.connect(self._choose_dir)
         self.btn_group.clicked.connect(self._regroup)
         self.btn_run.clicked.connect(self._run)
@@ -113,7 +114,7 @@ class ComparePage(PageBase):
 
         self.lbl_invalid = QLabel("无法归组：—")
         self.lbl_invalid.setWordWrap(True)
-        self.lbl_invalid.setStyleSheet("color: #B8860B;")
+        theme.mark(self.lbl_invalid, "warn")
         lg.addWidget(self.lbl_invalid)
 
         left = QWidget()
@@ -235,7 +236,7 @@ class ComparePage(PageBase):
         lfig.addWidget(self.canvas)
 
         self.lbl_ratio = QLabel("k₁/k₂ = —")
-        self.lbl_ratio.setStyleSheet("font-size: 14px; font-weight: bold;")
+        theme.mark(self.lbl_ratio, "section")
         box_r = QGroupBox("结果")
         lr = QVBoxLayout(box_r)
         lr.addWidget(self.lbl_ratio)

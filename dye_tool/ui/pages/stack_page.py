@@ -34,6 +34,7 @@ from ui.widgets.file_table import FileTable
 from ui.widgets.live_plot import LivePlotCanvas, label_text
 from ui.widgets.mpl_canvas import CanvasPanel
 from ui.widgets.style_panel import MAPPED_KEYS, StylePanel
+from ui import theme
 
 #: V2.6 FR-38.3：作图台布局适配基线（参数/文件表最小高度 / 水平 body 左栏 360–470）
 PARAM_TABLE_MIN_H = 140
@@ -60,12 +61,12 @@ class StackPage(PageBase):
     def _build(self) -> None:
         self.btn_dir = QPushButton("选择数据目录…")
         self.btn_run = QPushButton("▶ 生成定稿图")
-        self.btn_run.setStyleSheet("font-weight: bold;")
+        theme.mark(self.btn_run, "primary")
         self.btn_run.setToolTip(
             "由**既有流水线渲染器**产出定稿图（run figures/，JACS 版式）。\n"
             "载入/切换不再自动生图；工作视图与定稿图分离（V2.5 FR-34）。")
         self.lbl_dir = QLabel("未选择目录")
-        self.lbl_dir.setStyleSheet("color: #555;")
+        theme.mark(self.lbl_dir, "muted")
         self.btn_dir.clicked.connect(self._choose_dir)
         self.btn_run.clicked.connect(self._run)
         self.btn_run.setEnabled(False)
@@ -76,7 +77,7 @@ class StackPage(PageBase):
         self.chk_live.setChecked(True)
         self.chk_live.setToolTip("调整出图参数时用最终渲染器低 dpi 预览；不写正式 run")
         self.lbl_live = QLabel("预览待命")
-        self.lbl_live.setStyleSheet("color: #6b7280; font-size: 11px;")
+        theme.mark(self.lbl_live, "hint")
         top.addWidget(self.chk_live)
         top.addWidget(self.lbl_live)
         top.addWidget(self.btn_run)

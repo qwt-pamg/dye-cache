@@ -11,10 +11,12 @@ from PySide6.QtGui import QKeySequence
 from PySide6.QtWidgets import QAbstractItemView
 from PySide6.QtWidgets import QTableWidget
 from PySide6.QtWidgets import QTableWidgetItem
+from ui import theme
 
 log = logging.getLogger("dye_tool.ui.analysis")
 
-_INVALID_BG = QColor("#FFE0E0")
+#: 旧名保留给 analysis_page 的再导出；实际底色按当前主题取（theme.color("danger_bg")）
+_INVALID_BG = QColor("#FDECEC")
 
 
 def _mark_param_cell(item: QTableWidgetItem, reason: str) -> None:
@@ -22,7 +24,7 @@ def _mark_param_cell(item: QTableWidgetItem, reason: str) -> None:
     if item is None:
         return
     if reason:
-        item.setData(Qt.BackgroundRole, _INVALID_BG)
+        item.setData(Qt.BackgroundRole, theme.color("danger_bg"))
         item.setToolTip(reason)
     else:
         item.setData(Qt.BackgroundRole, None)

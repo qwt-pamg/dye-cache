@@ -17,6 +17,7 @@ from typing import Optional
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (QFileDialog, QHBoxLayout, QLabel, QMessageBox,
                                QPushButton, QWidget)
+from ui import theme
 
 log = logging.getLogger("dye_tool.ui.export")
 
@@ -65,7 +66,7 @@ class ExportBar(QWidget):
         self.lbl = QLabel("结果目录：—")
         # 允许选中文本，便于用户复制路径
         self.lbl.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        self.lbl.setStyleSheet("color: #333;")
+        theme.mark(self.lbl, "muted")
         self.btn_open = QPushButton("打开结果文件夹")
         self.btn_copy = QPushButton("导出结果到…")
         self.btn_open.clicked.connect(self.open_run_dir)

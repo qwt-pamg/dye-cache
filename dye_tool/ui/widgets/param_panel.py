@@ -420,7 +420,6 @@ class ParamPanel(QWidget):
                 self._modified_hits += 1
             if bool(w.property(self.MODIFIED_PROP)) != modified:
                 w.setProperty(self.MODIFIED_PROP, modified)
-                w.setStyleSheet("background-color: #FFF7E0;" if modified else "")
                 try:
                     w.style().unpolish(w)
                     w.style().polish(w)

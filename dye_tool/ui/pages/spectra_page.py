@@ -35,6 +35,7 @@ from ui.widgets.live_plot import LivePlotCanvas, label_text
 from ui.widgets.mpl_canvas import CanvasPanel
 from ui.widgets.style_panel import (MAPPED_KEYS, SPECTRA_MAPPED_KEYS,
                                     StylePanel)
+from ui import theme
 
 KIND_ZH = {"abs": "吸收", "em": "发射", "unknown": "未知"}
 
@@ -97,12 +98,12 @@ class SpectraPage(PageBase):
         self.btn_files = QPushButton("选择光谱文件…")
         self.btn_dir = QPushButton("选择目录…")
         self.btn_run = QPushButton("▶ 生成定稿图")
-        self.btn_run.setStyleSheet("font-weight: bold;")
+        theme.mark(self.btn_run, "primary")
         self.btn_run.setToolTip(
             "由**既有流水线渲染器**产出定稿图（JACS 版式）。载入/切换不再自动生图；\n"
             "探索性交互在工作视图（活画布）里完成（V2.5 FR-32/34）。")
         self.lbl_info = QLabel("尚未载入光谱")
-        self.lbl_info.setStyleSheet("color: #555;")
+        theme.mark(self.lbl_info, "muted")
         self.btn_files.clicked.connect(self._choose_files)
         self.btn_dir.clicked.connect(self._choose_dir)
         self.btn_run.clicked.connect(self._run)
@@ -115,7 +116,7 @@ class SpectraPage(PageBase):
         self.chk_live.setChecked(True)
         self.chk_live.setToolTip("调整出图/光谱参数时用最终渲染器低 dpi 预览；不写正式 run")
         self.lbl_live = QLabel("预览待命")
-        self.lbl_live.setStyleSheet("color: #6b7280; font-size: 11px;")
+        theme.mark(self.lbl_live, "hint")
         top.addWidget(self.chk_live)
         top.addWidget(self.lbl_live)
         top.addWidget(self.btn_run)
@@ -135,7 +136,7 @@ class SpectraPage(PageBase):
         self.cmb_abs = QComboBox()
         self.cmb_em = QComboBox()
         self.chk_mark = QLabel("λmax 与斯托克斯位移将自动标注")
-        self.chk_mark.setStyleSheet("color: #777;")
+        theme.mark(self.chk_mark, "muted")
         box = QGroupBox("作图设置")
         f = QFormLayout(box)
         f.addRow("作图模式", self.cmb_mode)
@@ -175,7 +176,7 @@ class SpectraPage(PageBase):
         self.btn_eps = QPushButton("计算 ε")
         self.btn_eps.clicked.connect(self._calc_eps)
         self.lbl_eps = QLabel("ε = —")
-        self.lbl_eps.setStyleSheet("font-weight: bold;")
+        theme.mark(self.lbl_eps, "strong")
         box_eps = QGroupBox("摩尔消光系数 ε = A / (c·l)（可选）")
         self.box_eps = box_eps
         fe = QFormLayout(box_eps)
@@ -201,7 +202,7 @@ class SpectraPage(PageBase):
 
         # V2.6 FR-41.5：单对语义标签（当前配对 / 未选择配对 / auto 多对逐行）
         self.lbl_stokes = QLabel("先选择光谱目录")
-        self.lbl_stokes.setStyleSheet("font-size: 13px; font-weight: bold;")
+        theme.mark(self.lbl_stokes, "section")
         self.lbl_stokes.setWordWrap(True)
         self.btn_record_pair = QPushButton("在分析页记录")
         self.btn_record_pair.setToolTip(

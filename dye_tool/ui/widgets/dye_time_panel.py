@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Optional, Sequence
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QBrush, QColor, QFont, QKeySequence, QShortcut
+from PySide6.QtGui import QBrush, QFont, QKeySequence, QShortcut
 from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QDialog,
                                QDialogButtonBox, QDoubleSpinBox, QFormLayout,
                                QHBoxLayout, QHeaderView, QLabel, QMessageBox,
@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QDialog,
 from core.io import Scan
 from ui.widgets.time_units import (UNIT_LABELS, format_time_value,
                                     normalize_unit, parse_time_input)
+from ui import theme
 
 log = logging.getLogger("dye_tool.ui.dye_time_panel")
 
@@ -363,7 +364,7 @@ class DyeTimePanel(QWidget):
                     f = QFont()
                     f.setItalic(True)
                     it_d.setFont(f)
-                    it_d.setForeground(QBrush(QColor(120, 120, 120)))
+                    it_d.setForeground(QBrush(theme.color("text_subtle")))
                     it_d.setToolTip("自动从组名首字段推导；双击可改")
                 else:
                     it_d.setToolTip("手工指定；双击可改，「恢复自动命名」可还原")
@@ -398,7 +399,7 @@ class DyeTimePanel(QWidget):
                 self.tbl_time.setItem(r, T_FILE, it_f)
                 it_s = QTableWidgetItem(self._fmt_time(float(s.t_original)))
                 it_s.setFlags(Qt.ItemIsEnabled)
-                it_s.setForeground(QBrush(QColor(120, 120, 120)))
+                it_s.setForeground(QBrush(theme.color("text_subtle")))
                 it_s.setToolTip(f"文件名解析出的原始时间（只读；{float(s.t_original):g} s）")
                 self.tbl_time.setItem(r, T_SRC, it_s)
                 blank = bool(getattr(s, "time_blank", False))
@@ -424,8 +425,8 @@ class DyeTimePanel(QWidget):
         f = QFont()
         f.setBold(bool(edited))
         it.setFont(f)
-        it.setForeground(QBrush(QColor(20, 20, 20) if edited
-                                else QColor(60, 60, 60)))
+        it.setForeground(QBrush(theme.color("text") if edited
+                                else theme.color("text_muted")))
 
     # ══════════════ 染料命名 ══════════════
     def set_group_dye(self, group: str, dye: str) -> None:
@@ -483,7 +484,7 @@ class DyeTimePanel(QWidget):
                 f = item.font()
                 f.setItalic(False)
                 item.setFont(f)
-                item.setForeground(QBrush(QColor(20, 20, 20)))
+                item.setForeground(QBrush(theme.color("text")))
             finally:
                 self._loading = False
             self.dye_changed.emit(group, name)

@@ -31,6 +31,7 @@ from ui.widgets.file_table import ROLE_ZH, FileTable
 from ui.widgets.mpl_canvas import CanvasPanel
 from ui.widgets.param_panel import ParamPanel
 from ui.workers import Job
+from ui import theme
 
 log = logging.getLogger("dye_tool.ui.phi")
 
@@ -148,7 +149,7 @@ class ResultActions(QWidget):
         self.btn_retry.setToolTip("用当前参数重新运行（走同一条既有分析链路）")
         self.lbl_fix = QLabel("")
         self.lbl_fix.setWordWrap(True)
-        self.lbl_fix.setStyleSheet("color: #B45309; font-size: 11px;")
+        theme.mark(self.lbl_fix, "warnHint")
         self.btn_open_output.clicked.connect(self._open_output)
         self.btn_copy_result.clicked.connect(self._copy_result)
         self.btn_next_step.clicked.connect(
@@ -337,7 +338,7 @@ class PhiPage(PageBase):
         self.btn_dir = QPushButton("选择数据目录…")
         self.btn_reload = QPushButton("重新载入")
         self.btn_run = QPushButton("▶ 开始分析")
-        self.btn_run.setStyleSheet("font-weight: bold;")
+        theme.mark(self.btn_run, "primary")
         self.btn_run.setToolTip("跑完整流水线并出**预览图**（低分辨率、秒级完成）")
         self.btn_final = QPushButton("定稿出图")
         self.btn_final.setToolTip(
@@ -371,7 +372,7 @@ class PhiPage(PageBase):
             "取消勾选：仍按老行为一次画完整批预览图（图件多时要多等几秒）。\n"
             "两种方式的最终图件集合完全一样；「定稿出图」始终整批出 600 dpi。")
         self.lbl_dir = QLabel("未选择目录")
-        self.lbl_dir.setStyleSheet("color: #555;")
+        theme.mark(self.lbl_dir, "muted")
         self.btn_dir.clicked.connect(self._choose_dir)
         self.btn_reload.clicked.connect(self._reload_dir)
         self.btn_run.clicked.connect(self._run)
@@ -399,7 +400,7 @@ class PhiPage(PageBase):
         self.chk_live.setChecked(True)
         self.chk_live.setToolTip("调整图式/标注/透明等生图参数时，用最终渲染器低 dpi 预览；不写正式产物")
         self.lbl_live = QLabel("预览待命")
-        self.lbl_live.setStyleSheet("color: #6b7280; font-size: 11px;")
+        theme.mark(self.lbl_live, "hint")
         top3.addWidget(self.chk_live)
         top3.addWidget(self.lbl_live)
         self.btn_settings_toggle = QPushButton("设置区")
@@ -474,7 +475,7 @@ class PhiPage(PageBase):
         # FR-23.6b：点结果表某行 → 跳到该组页签（组页签未启用时该方法直接返回）
         self.table.cellClicked.connect(self._on_result_row_clicked)
         self.lbl_stage_bd = QLabel("阶段 B：k_obs 拟合（中间结果）  →  阶段 D：Φ_Δ（由同一批 k 直接换算）")
-        self.lbl_stage_bd.setStyleSheet("color: #555; font-size: 11px;")
+        theme.mark(self.lbl_stage_bd, "hint")
         self.lbl_stage_bd.setWordWrap(True)
         box_res = QGroupBox("阶段 B/D：k_obs 中间结果 + Φ_Δ 结果")
         lr = QVBoxLayout(box_res)
@@ -560,9 +561,7 @@ class PhiPage(PageBase):
         # A25.1（V2.3 §12）：结果过期横幅（参数改了但结果没重算时出现，非模态）
         self.banner = QFrame()
         self.banner.setObjectName("staleBanner")
-        self.banner.setStyleSheet(
-            "QFrame#staleBanner { background: #FFF4E5; border: 1px solid #F0B429;"
-            " border-radius: 4px; }")
+        theme.mark(self.banner, "banner")
         self.banner.setVisible(False)
         bh = QHBoxLayout(self.banner)
         bh.setContentsMargins(8, 6, 8, 6)

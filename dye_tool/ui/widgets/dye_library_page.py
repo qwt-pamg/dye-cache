@@ -28,7 +28,7 @@ from pathlib import Path
 from typing import Optional
 
 from PySide6.QtCore import QUrl, Qt, Signal
-from PySide6.QtGui import QColor, QDesktopServices
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QFileDialog, QGroupBox,
                                QHBoxLayout, QHeaderView, QLabel, QLineEdit,
                                QListWidget, QListWidgetItem, QMessageBox,
@@ -48,6 +48,7 @@ from core.dyes import (HISTORY_COLUMNS, HISTORY_NAME, is_legacy_run_dir,
                        scan_runs)
 from core.explain import explain_exclusion
 from core.paths import default_out_root
+from ui import theme
 
 log = logging.getLogger("dye_tool.ui.dye_library")
 
@@ -411,11 +412,11 @@ class DyeLibraryPage(QWidget):
     def _build(self) -> None:
         # ── 顶部：runs 根目录 ──
         self.lbl_title = QLabel("染料库")
-        self.lbl_title.setStyleSheet("font-size: 15px; font-weight: bold;")
+        theme.mark(self.lbl_title, "title")
         self.lbl_sub = QLabel(
             "按染料汇总历次 run 的档案（history.csv）。左栏选染料 → 右栏看历史表与趋势。"
             "「未归档 (V1.0)」里的旧 run 目录只读浏览，程序绝不改名或移动它们。")
-        self.lbl_sub.setStyleSheet("color: #555;")
+        theme.mark(self.lbl_sub, "muted")
         self.lbl_sub.setWordWrap(True)
 
         self.edit_root = QLineEdit(str(self.out_root))
@@ -459,7 +460,7 @@ class DyeLibraryPage(QWidget):
 
         # ── 左下：未归档（V1.0）只读分组 ──
         self.lbl_legacy = QLabel("未归档 (V1.0)：0 个目录")
-        self.lbl_legacy.setStyleSheet("color: #555;")
+        theme.mark(self.lbl_legacy, "muted")
         self.list_legacy = QListWidget()
         self.list_legacy.setSelectionMode(QAbstractItemView.SingleSelection)
         self.list_legacy.setToolTip(
@@ -480,7 +481,7 @@ class DyeLibraryPage(QWidget):
 
         # ── 右上：历史表 ──
         self.lbl_hist = QLabel("尚未选择染料")
-        self.lbl_hist.setStyleSheet("color: #555;")
+        theme.mark(self.lbl_hist, "muted")
         self.table_hist = QTableWidget(0, len(HISTORY_COLUMNS))
         self.table_hist.setHorizontalHeaderLabels(list(HISTORY_COLUMNS))
         self.table_hist.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -517,7 +518,7 @@ class DyeLibraryPage(QWidget):
         box_figs = QGroupBox("该 run 的图件（拼版导出用；可多选）")
         lay_fg = QVBoxLayout(box_figs)
         self.lbl_figs = QLabel("先在历史表里选一次 run")
-        self.lbl_figs.setStyleSheet("color: #555;")
+        theme.mark(self.lbl_figs, "muted")
         self.lbl_figs.setWordWrap(True)
         self.list_figs = QListWidget()
         self.list_figs.setSelectionMode(QAbstractItemView.ExtendedSelection)
@@ -680,7 +681,7 @@ class DyeLibraryPage(QWidget):
                     it = QTableWidgetItem(str(text))
                     it.setToolTip(tip)
                     if c and str(text) == DASH:
-                        it.setForeground(QColor(150, 150, 150))
+                        it.setForeground(theme.color("text_subtle"))
                     self.table_dyes.setItem(r, c, it)
         finally:
             self.table_dyes.blockSignals(False)

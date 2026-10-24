@@ -25,6 +25,7 @@ SHORTCUT_GROUPS: dict[str, list[tuple[str, str]]] = {
         ("Alt+4", "切到 ③ 图件"),
         ("Alt+5", "切到 ④ 档案"),
         ("Alt+6", "切到 ⑤ 设置"),
+        ("Ctrl+L", "展开 / 收起运行日志"),
     ],
     "数据": [
         ("Ctrl+Z", "时间工作表：撤销一次整定修改"),

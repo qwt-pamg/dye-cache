@@ -18,6 +18,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (QFrame, QGridLayout, QGroupBox, QHBoxLayout,
                                QLabel, QPushButton, QScrollArea, QTextBrowser,
                                QVBoxLayout, QWidget)
+from ui import theme
 
 
 log = logging.getLogger("dye_tool.ui.home")
@@ -107,12 +108,12 @@ class HomePage(QWidget):
         lay.setSpacing(14)
 
         title = QLabel("染料光谱数据分析")
-        title.setStyleSheet("font-size: 22px; font-weight: bold;")
+        theme.mark(title, "hero")
         lay.addWidget(title)
         sub = QLabel("一组实验数据 → QC → Φ_Δ → 期刊图件。"
                      "不读文档也能做完：照下面三步走，或点「一键演示」看它自己跑一遍。")
         sub.setWordWrap(True)
-        sub.setStyleSheet("color: #4b5563;")
+        theme.mark(sub, "muted")
         lay.addWidget(sub)
 
         # ── ① 三步开始 ──
@@ -170,7 +171,7 @@ class HomePage(QWidget):
         view.setOpenExternalLinks(False)
         view.setHtml(NAMING_CARD)
         view.setMinimumHeight(210)
-        view.setStyleSheet("border: none; background: transparent;")
+        theme.mark(view, "plain")
         lay.addWidget(view)
         return box
 
@@ -198,13 +199,13 @@ class HomePage(QWidget):
             # V2.6 FR-40.4：空态可点击引导（切页 + 聚焦①数据页入口）
             b_empty = QPushButton("去①数据页载入数据…")
             b_empty.setToolTip("切到 ① 数据页，选择或拖入数据目录")
-            b_empty.setStyleSheet("text-align: left; padding: 4px 8px;")
+            theme.mark(b_empty, "link")
             b_empty.clicked.connect(lambda _=False: self.go.emit("data"))
             self._recent_dirs_lay.addWidget(b_empty)
         for d in dirs:
             b = QPushButton(f"📁 {Path(d).name}    {d}")
             b.setToolTip(d)
-            b.setStyleSheet("text-align: left; padding: 4px 8px;")
+            theme.mark(b, "link")
             b.clicked.connect(lambda _=False, p=Path(d): self._recent_dir_clicked(p))
             self._recent_dirs_lay.addWidget(b)
         runs = self._recent_runs(5)
@@ -213,7 +214,7 @@ class HomePage(QWidget):
         for r in runs:
             b = QPushButton(f"🗂 {r.parent.name} / {r.name}")
             b.setToolTip(str(r))
-            b.setStyleSheet("text-align: left; padding: 4px 8px;")
+            theme.mark(b, "link")
             b.clicked.connect(lambda _=False, p=r: self._open_path(p))
             self._recent_runs_lay.addWidget(b)
 
@@ -275,12 +276,11 @@ class HomePage(QWidget):
         lay.addLayout(row3)
         out = QLabel("")
         out.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        out.setStyleSheet("font-family: Consolas, monospace; font-size: 14px; "
-                          "padding: 8px; background: #f3f4f6; border-radius: 4px;")
+        theme.mark(out, "codeBlock")
         lay.addWidget(out)
         hint = QLabel("")
         hint.setWordWrap(True)
-        hint.setStyleSheet("color: #6b7280;")
+        theme.mark(hint, "muted")
         lay.addWidget(hint)
         btns = QDialogButtonBox(QDialogButtonBox.Close)
         btns.rejected.connect(dlg.reject)
@@ -315,7 +315,7 @@ class HomePage(QWidget):
     @staticmethod
     def _muted(text: str) -> QLabel:
         lb = QLabel(text)
-        lb.setStyleSheet("color: #9ca3af;")
+        theme.mark(lb, "subtle")
         return lb
 
     @staticmethod

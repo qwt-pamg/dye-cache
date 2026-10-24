@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (QComboBox, QDoubleSpinBox, QFormLayout, QGroupBox
                                QHBoxLayout, QHeaderView, QLabel, QLineEdit,
                                QPushButton, QTableWidget, QTableWidgetItem,
                                QVBoxLayout, QWidget)
+from ui import theme
 
 #: 防抖窗口（ms）——设计文档 FR-33.2 要求 ≤150
 DEBOUNCE_MS = 120
@@ -107,7 +108,7 @@ class StylePanel(QWidget):
         lay.setContentsMargins(0, 0, 0, 0)
         self.lbl_note = QLabel(ONLY_WORK_VIEW_NOTE)
         self.lbl_note.setWordWrap(True)
-        self.lbl_note.setStyleSheet("color: #6b7280; font-size: 11px;")
+        theme.mark(self.lbl_note, "hint")
         lay.addWidget(self.lbl_note)
 
         self.tbl = QTableWidget(0, len(CURVE_HEADERS))
