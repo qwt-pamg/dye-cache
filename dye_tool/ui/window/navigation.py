@@ -53,22 +53,16 @@ class MainWindowNavMixin:
         self._apply_nav_shortcut_tips()
 
     def _apply_nav_shortcut_tips(self) -> None:
-        """导航项 tooltip 标注 Alt+1..6（批次徽标刷新后也重贴一次）。"""
+        """导航项 tooltip 标注 Alt+1..6（徽标刷新不会冲掉，见 NavBar.set_shortcut）。"""
         from ui.window.nav import NAV_ITEMS
-        hint = "导航快捷键：Alt+1 主页 / Alt+2 ①数据 / Alt+3 ②分析 / " \
-               "Alt+4 ③图件 / Alt+5 ④档案 / Alt+6 ⑤设置"
+        hint = "导航快捷键：Alt+1 主页 / Alt+2 数据 / Alt+3 分析 / " \
+               "Alt+4 图件 / Alt+5 档案 / Alt+6 设置"
         nav = getattr(self, "nav", None)
         if nav is None:
             return
-        try:
-            nav.list.setToolTip(hint)
-            nav.setToolTip(hint)
-        except Exception:                                  # noqa: BLE001
-            pass
-        for row, (key, _label, tip) in enumerate(NAV_ITEMS):
-            item = nav.list.item(row)
-            if item is not None:
-                item.setToolTip(f"{tip}\n快捷键：Alt+{row + 1}")
+        nav.setToolTip(hint)
+        for row, (key, _label, _tip) in enumerate(NAV_ITEMS):
+            nav.set_shortcut(key, f"Alt+{row + 1}")
 
     @staticmethod
     def shortcut_groups() -> dict:
@@ -310,9 +304,9 @@ class MainWindowNavMixin:
         self.nav.set_badge("data", badge)
         self.nav.set_badge("analysis", badge)
         d = getattr(self.data_page, "data_dir", None)
-        self.nav.set_context(f"当前批次：{Path(d).name if d else '未选择'}\n{badge}")
-        # 徽标刷新会重设导航项 tooltip → 补回 Alt 快捷键标注（FR-40.3）
-        self._apply_nav_shortcut_tips()
+        # 图标栏放不下批次摘要 → 状态栏常驻（lbl_context 见 _build_status）
+        self.lbl_context.setText(f"当前批次 {Path(d).name if d else '未选择'} · {badge}")
+        self.lbl_context.setToolTip(f"当前批次目录：{d or '未选择'}\n{badge}")
         # FR-24.9：把①数据页的整定（染料名/时间）随批次单向同步给 ②分析
         overrides = None
         try:

@@ -295,3 +295,136 @@ def test_workbench_pages_share_one_implementation():
                  "_save_display_preset_dialog", "_init_layout_sizes", "_on_advanced_style"):
         assert name not in vars(StackPage) and name not in vars(SpectraPage), name
         assert getattr(StackPage, name) is getattr(WorkbenchPage, name)
+
+
+# ═══════════════════════ 外壳：图标栏 / 分析页顶部细条 ═══════════════════════
+def test_nav_rail_select_badge_and_keys(qt_app):
+    from PySide6.QtCore import QEvent, Qt
+    from PySide6.QtGui import QKeyEvent
+    from ui.window.nav import NAV_ITEMS, NavBar
+    nav = NavBar()
+    got = []
+    nav.navigated.connect(got.append)
+    try:
+        assert nav.width() == 56 and nav.current_key == ""
+        assert [b.text() for b in nav.buttons.values()] == [lb for _k, lb, _t in NAV_ITEMS]
+        assert all(not lb[0].isdigit() and lb[0] not in "①②③④⑤" for _k, lb, _t in NAV_ITEMS)
+        assert nav.select("data") is True and nav.select("data") is True
+        assert got == ["data", "data"] and nav.buttons["data"].isChecked()
+        assert nav.select("nope") is False
+        nav.set_badge("data", "35 个文件 / 2 剔除")
+        nav.set_shortcut("data", "Alt+2")
+        assert nav.badge("data") == "35 个文件 / 2 剔除"
+        tip = nav.buttons["data"].toolTip()
+        assert "35 个文件 / 2 剔除" in tip and "Alt+2" in tip
+        nav.set_badge("data", "")
+        assert nav.badge("data") == "" and "剔除" not in nav.buttons["data"].toolTip()
+        # ↑/↓ 切换并带焦点；到底不回绕
+        btn = nav.buttons["data"]
+        btn.keyPressEvent(QKeyEvent(QEvent.KeyPress, Qt.Key_Down, Qt.NoModifier))
+        assert nav.current_key == "analysis"
+        for _ in range(8):
+            nav.buttons[nav.current_key].keyPressEvent(
+                QKeyEvent(QEvent.KeyPress, Qt.Key_Down, Qt.NoModifier))
+        assert nav.current_key == "settings"
+        # 设置钉在栏底：它之前是一段弹簧
+        lay = nav.layout()
+        idx = lay.indexOf(nav.buttons["settings"])
+        assert lay.itemAt(idx - 1).spacerItem() is not None
+    finally:
+        nav.deleteLater()
+
+
+def test_rail_icon_tints_by_colour(qt_app):
+    from PySide6.QtGui import QColor
+    from ui.window.nav import NAV_ITEMS, rail_icon
+    for key, _l, _t in NAV_ITEMS:
+        img = rail_icon(key, QColor("#ff0000"), 20).pixmap(20, 20).toImage()
+        reds = [img.pixelColor(x, y) for x in range(20) for y in range(20)
+                if img.pixelColor(x, y).alpha() > 200]
+        assert reds and all(c.red() > 200 and c.green() < 60 for c in reds), key
+
+
+class _FakePanel:
+    """假任务页：可选地提供 top_bar_widget()（顶部细条插槽契约）。"""
+
+    @staticmethod
+    def make(with_bar: bool, text: str = ""):
+        from PySide6.QtCore import Signal
+        from PySide6.QtWidgets import QLabel, QWidget
+
+        class Fake(QWidget):
+            logged = Signal(str, str)
+            status = Signal(str)
+            progress = Signal(int, str)
+            run_finished = Signal(object)
+
+        p = Fake()
+        if with_bar:
+            p.bar = QLabel(text, p)
+            p.calls = 0
+
+            def top_bar_widget():
+                p.calls += 1
+                return p.bar
+            p.top_bar_widget = top_bar_widget
+        return p
+
+
+def test_analysis_top_bar_widget_contract(qt_app, tmp_path, monkeypatch):
+    monkeypatch.setenv("DYE_TOOL_CONFIG", str(tmp_path / "c.yaml"))
+    from core.config import default_config
+    from ui.pages.analysis import AnalysisPage
+    page = AnalysisPage(default_config())
+    a = _FakePanel.make(True, "A 的流程条")
+    b = _FakePanel.make(True, "B 的流程条")
+    plain = _FakePanel.make(False)
+    for key, fake in (("extinction", a), ("wavelength", b), ("queue", plain)):
+        page._pages[key] = fake
+        page.stack.addWidget(fake)
+    try:
+        page.select_task("peaks")
+        assert page.select_task("extinction") is True
+        assert page.stack.currentWidget() is a
+        assert a.bar.parent() is page.top_slot and not a.bar.isHidden()
+        assert not page.top_sep.isHidden()
+        # 切到另一个提供工具条的任务：旧的摘下还给原任务页（不删除）
+        page.select_task("wavelength")
+        assert a.bar.parent() is a and a.bar.isHidden()
+        assert b.bar.parent() is page.top_slot and not b.bar.isHidden()
+        assert page.top_slot.layout().count() == 1
+        # 没有 top_bar_widget 的任务：插槽留空、分隔线隐藏
+        page.select_task("queue")
+        assert b.bar.parent() is b and b.bar.isHidden()
+        assert page.top_slot.layout().count() == 0 and page.top_sep.isHidden()
+        # 再切回来：同一个控件重新挂上
+        page.select_task("extinction")
+        assert a.bar.parent() is page.top_slot and a.calls == 2
+        assert page.select_task("extinction") is True and a.calls == 2   # 幂等
+    finally:
+        page.deleteLater()
+
+
+def test_analysis_task_picker_switches_like_shortcut(qt_app, tmp_path, monkeypatch):
+    monkeypatch.setenv("DYE_TOOL_CONFIG", str(tmp_path / "c.yaml"))
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QLabel
+    from core.config import default_config
+    from ui.pages.analysis import TASKS, AnalysisPage
+    page = AnalysisPage(default_config())
+    try:
+        picker = page.task_picker
+        assert picker.count() == len(TASKS) and picker.keys() == [k for k, *_ in TASKS]
+        for i, (_k, name, desc, needs) in enumerate(TASKS):
+            item = picker.list.item(i)
+            assert item.toolTip() == desc
+            labels = picker.list.itemWidget(item).findChildren(QLabel)
+            assert [lb.text() for lb in labels] == [name, f"需要：{needs}"]
+            assert [lb.property("role") for lb in labels] == ["strong", "muted"]
+        item = picker.list.item([k for k, *_ in TASKS].index("stokes"))
+        picker.list.itemClicked.emit(item)
+        assert page.current_key() == "stokes" and page.stack.currentWidget() is page.stokes_panel
+        assert "斯托克斯" in page.btn_task.text() and picker.list.currentItem() is item
+        assert item.data(Qt.UserRole) == "stokes"
+    finally:
+        page.deleteLater()

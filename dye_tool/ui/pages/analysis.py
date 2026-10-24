@@ -1,4 +1,8 @@
-"""② 分析页：左侧任务卡片列表 + 右侧嵌入的任务页（Φ_Δ、对比与 :mod:`ui.pages.tasks` 各卡）。"""
+"""② 分析页：顶部细条（任务选择 + 当前任务自己的工具条）+ 下方嵌入的任务页。
+
+任务页（Φ_Δ、对比与 :mod:`ui.pages.tasks` 各卡）可以把自己的流程条/工具条交给
+顶部细条显示，约定见 :meth:`AnalysisPage._mount_top_widget`。
+"""
 
 from __future__ import annotations
 
@@ -6,15 +10,15 @@ import logging
 
 from pathlib import Path
 from typing import Optional
+from PySide6.QtCore import QPoint
 from PySide6.QtCore import Qt
-from PySide6.QtCore import QTimer
 from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QAbstractItemView
+from PySide6.QtWidgets import QFrame
+from PySide6.QtWidgets import QHBoxLayout
 from PySide6.QtWidgets import QLabel
 from PySide6.QtWidgets import QListWidget
 from PySide6.QtWidgets import QListWidgetItem
 from PySide6.QtWidgets import QPushButton
-from PySide6.QtWidgets import QSplitter
 from PySide6.QtWidgets import QStackedWidget
 from PySide6.QtWidgets import QVBoxLayout
 from PySide6.QtWidgets import QWidget
@@ -30,7 +34,7 @@ from ui import theme
 
 log = logging.getLogger("dye_tool.ui.analysis")
 
-__all__ = ["TASKS", "AnalysisPage"]
+__all__ = ["TASKS", "AnalysisPage", "TaskPicker"]
 
 #: 任务卡片：``(key, 名称, 一句话, 需要的输入)``
 TASKS: tuple = (
@@ -49,13 +53,97 @@ TASKS: tuple = (
      "逐谱找峰（峰位/强度/prominence/宽度），导出峰表 CSV", "光谱目录"),
 )
 
+
+#: 顶部细条高度（任务页交上来的工具条要能放进这个高度）
+TOP_BAR_H = 44
+
+
+@theme.register_qss
+def _analysis_qss(p: dict[str, str]) -> str:
+    return f"""
+/* ── ② 分析页顶部细条（ui/pages/analysis.py） ── */
+QFrame#analysisTopBar {{ background: {p['surface']}; border: none;
+                        border-bottom: 1px solid {p['border']}; }}
+QFrame#topBarSep {{ background: {p['border']}; border: none; }}
+QPushButton#taskSelector {{ background: {p['surface_alt']}; color: {p['text']};
+                           font-weight: bold; padding: 4px 10px; border-radius: 6px; }}
+QPushButton#taskSelector:hover {{ border-color: {p['accent']}; }}
+QFrame#taskPicker {{ background: {p['surface']}; border: 1px solid {p['border_strong']}; }}
+QListWidget#taskPickerList {{ background: transparent; border: none; outline: none; }}
+QListWidget#taskPickerList::item {{ border-radius: 6px; margin: 1px 0; }}
+QListWidget#taskPickerList::item:hover {{ background: {p['surface_alt']}; }}
+QListWidget#taskPickerList::item:selected {{ background: {p['accent_soft']}; }}
+"""
+
+
+class TaskPicker(QFrame):
+    """任务选择弹层：每项"名称（粗体）+ 需要：…（灰字）"，tooltip 是长说明。
+
+    ↑/↓ 移动、回车或单击选中、Esc 关闭；选中发 ``picked(key)``。
+    """
+
+    picked = Signal(str)
+
+    def __init__(self, parent: Optional[QWidget] = None):
+        super().__init__(parent, Qt.Popup)
+        self.setObjectName("taskPicker")
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(6, 6, 6, 6)
+        self.list = QListWidget()
+        self.list.setObjectName("taskPickerList")
+        self.list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.list.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        for key, name, desc, needs in TASKS:
+            it = QListWidgetItem()
+            it.setData(Qt.UserRole, key)
+            it.setToolTip(desc)
+            row = QWidget()
+            row.setToolTip(desc)
+            rv = QVBoxLayout(row)
+            rv.setContentsMargins(10, 6, 10, 6)
+            rv.setSpacing(1)
+            rv.addWidget(theme.mark(QLabel(name), "strong"))
+            rv.addWidget(theme.mark(QLabel(f"需要：{needs}"), "muted"))
+            it.setSizeHint(row.sizeHint())
+            self.list.addItem(it)
+            self.list.setItemWidget(it, row)
+        self.list.itemClicked.connect(self._on_item)
+        self.list.itemActivated.connect(self._on_item)
+        lay.addWidget(self.list)
+
+    def count(self) -> int:
+        return self.list.count()
+
+    def keys(self) -> list[str]:
+        return [self.list.item(i).data(Qt.UserRole) for i in range(self.list.count())]
+
+    def set_current(self, key: str) -> None:
+        keys = self.keys()
+        if key in keys:
+            self.list.setCurrentRow(keys.index(key))
+
+    def popup_under(self, anchor: QWidget) -> None:
+        """贴在 ``anchor`` 下方弹出，高度刚好放下全部任务。"""
+        rows = sum(self.list.sizeHintForRow(i) + 2 for i in range(self.list.count()))
+        m = self.layout().contentsMargins()
+        self.list.setFixedHeight(rows + 4)
+        self.resize(max(360, anchor.width()), rows + 4 + m.top() + m.bottom())
+        self.move(anchor.mapToGlobal(QPoint(0, anchor.height() + 4)))
+        self.show()
+        self.list.setFocus(Qt.PopupFocusReason)
+
+    def _on_item(self, item: QListWidgetItem) -> None:
+        self.hide()
+        self.picked.emit(str(item.data(Qt.UserRole)))
+
+
 class AnalysisPage(QWidget):
-    """任务卡片 + 右侧嵌入页。信号 ``page_run_finished(object)`` 冒泡给壳。"""
+    """顶部细条（任务选择 + 任务工具条）+ 下方嵌入页。信号 ``page_run_finished(object)`` 冒泡给壳。"""
 
     page_run_finished = Signal(object)
     #: V2.6 FR-40.5：「下一步」→ ③ 图件 / 定稿出图（由主窗口接线跳页）
     next_step_requested = Signal(str)
-    #: V2.6 FR-40.4：空态「去①数据页载入数据…」（由主窗口切页并聚焦入口）
+    #: V2.6 FR-40.4：空态「去数据页载入数据…」（由主窗口切页并聚焦入口）
     request_data_page = Signal()
     logged = Signal(str, str)
     status = Signal(str)
@@ -74,42 +162,42 @@ class AnalysisPage(QWidget):
     def _build(self) -> None:
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
-        split = QSplitter(Qt.Horizontal)
-        self.split = split
+        lay.setSpacing(0)
 
-        left = QWidget()
-        self.left_panel = left
-        lv = QVBoxLayout(left)
-        lv.setContentsMargins(10, 10, 6, 10)
-        title = QLabel("我要做什么？")
-        theme.mark(title, "section")
-        lv.addWidget(title)
-        self.list = QListWidget()
-        self.list.setObjectName("taskList")
-        self.list.setSelectionMode(QAbstractItemView.SingleSelection)
-        # V2.6 FR-38.2：任务项压成 2 行（名称 + 需要），描述移 tooltip —— 窄栏不再挤成 4–6 行
-        for key, name, desc, needs in TASKS:
-            it = QListWidgetItem(f"{name}\n需要：{needs}")
-            it.setData(Qt.UserRole, key)
-            it.setToolTip(desc)
-            self.list.addItem(it)
-        self.list.setWordWrap(True)
-        # 纵向滚动用 QListWidget 默认行为；列表吃满剩余高度，窗口变矮时不裁底
-        lv.addWidget(self.list, 1)
-        self.lbl_batch = QLabel("当前批次：未载入")
-        self.lbl_batch.setWordWrap(True)
-        theme.mark(self.lbl_batch, "hint")
-        lv.addWidget(self.lbl_batch)
-        # V2.6 FR-40.4：空态可点击引导 → ①数据页载入数据（并聚焦入口）
-        self.btn_empty_data = QPushButton("去①数据页载入数据…")
+        # ── 顶部细条：分析 [任务 ▾] | 当前任务自己的工具条 ──
+        bar = QFrame()
+        bar.setObjectName("analysisTopBar")
+        bar.setFixedHeight(TOP_BAR_H)
+        self.top_bar = bar
+        hb = QHBoxLayout(bar)
+        hb.setContentsMargins(12, 0, 10, 0)
+        hb.setSpacing(8)
+        hb.addWidget(theme.mark(QLabel("分析"), "muted"))
+        self.btn_task = QPushButton()
+        self.btn_task.setObjectName("taskSelector")
+        self.btn_task.setCursor(Qt.PointingHandCursor)
+        self.task_picker = TaskPicker(self)
+        self.task_picker.picked.connect(self.select_task)
+        self.btn_task.clicked.connect(lambda: self.task_picker.popup_under(self.btn_task))
+        hb.addWidget(self.btn_task)
+        self.top_sep = QFrame()
+        self.top_sep.setObjectName("topBarSep")
+        self.top_sep.setFixedSize(1, 24)
+        self.top_sep.setVisible(False)
+        hb.addWidget(self.top_sep)
+        # 任务页工具条的插槽：吃满剩余宽度
+        self.top_slot = QWidget()
+        self._slot_lay = QHBoxLayout(self.top_slot)
+        self._slot_lay.setContentsMargins(0, 0, 0, 0)
+        self._slot_lay.setSpacing(0)
+        hb.addWidget(self.top_slot, 1)
+        # V2.6 FR-40.4：空态可点击引导 → 数据页载入数据（并聚焦入口）
+        self.btn_empty_data = QPushButton("去数据页载入数据…")
         self.btn_empty_data.setToolTip(
-            "当前还没有批次数据：切到 ① 数据页选择/拖入数据目录")
+            "当前还没有批次数据：切到 数据 页选择/拖入数据目录")
         self.btn_empty_data.clicked.connect(self.request_data_page.emit)
-        self.btn_empty_data.setVisible(True)
-        # 左栏 200–260：任务项是"名称 + 需要"两行，再宽只是把工作区挤窄
-        left.setMinimumWidth(200)
-        left.setMaximumWidth(260)
-        split.addWidget(left)
+        hb.addWidget(self.btn_empty_data)
+        lay.addWidget(bar)
 
         self.stack = QStackedWidget()
         self.phi_page = self._injected.get("phi") or PhiPage(self.cfg)
@@ -154,44 +242,17 @@ class AnalysisPage(QWidget):
                   self.peaks_panel):
             p.run_finished.connect(lambda *_: self._refresh_queue_mutex())
             p.progress.connect(lambda *_: self._refresh_queue_mutex())
-        split.addWidget(self.stack)
-        split.setStretchFactor(0, 0)
-        split.setStretchFactor(1, 1)
-        split.setSizes([220, 1200])       # 左栏初值 220px
-        lay.addWidget(split, 1)
+        lay.addWidget(self.stack, 1)
 
-        self.list.currentRowChanged.connect(self._on_task)
-        self.list.setCurrentRow(0)          # 默认 Φ_Δ —— 最常用的任务
-        self.list.item(0).setSelected(True)
+        self._current = ""
+        self._top_widget: Optional[QWidget] = None
+        self._top_owner: Optional[QWidget] = None
+        self.select_task("phi")             # 默认 Φ_Δ —— 最常用的任务
         # V2.3 FR-24.1 / V2.7 A 道：Ctrl+1..8 动态绑定（按 TASKS 顺序）
         from PySide6.QtGui import QKeySequence, QShortcut
         for _i, (_key, *_rest) in enumerate(TASKS):
             QShortcut(QKeySequence(f"Ctrl+{_i + 1}"), self,
                       activated=lambda k=_key: self.select_task(k))
-
-    # ── V2.6 FR-38.2：左栏初值（构造期页面宽度未知，首次显示后校正为 260px） ──
-    def showEvent(self, event) -> None:                # noqa: N802
-        super().showEvent(event)
-        if not getattr(self, "_layout_inited", False):
-            QTimer.singleShot(0, self._init_layout_sizes)
-
-    def resizeEvent(self, event) -> None:              # noqa: N802
-        super().resizeEvent(event)
-        if not getattr(self, "_layout_inited", False):
-            QTimer.singleShot(0, self._init_layout_sizes)
-
-    def _init_layout_sizes(self) -> None:
-        """首次真正显示后把左栏设为 260px（QSplitter 按总宽度归一化，构造期 640px 做不到）。"""
-        if getattr(self, "_layout_inited", False):
-            return
-        if not self.isVisible() or self.split.width() < 500:
-            return                  # 未真正显示 / 尺寸未定 → 等下一次 show/resize
-        self._layout_inited = True
-        try:
-            total = self.split.width()
-            self.split.setSizes([220, max(1, total - 220)])
-        except Exception:                              # noqa: BLE001 —— 布局未就绪时保持构造初值
-            pass
 
     # ── 生命周期（V2.x 审查 S2：关窗漏 shutdown 这两个面板） ──
     def shutdown(self) -> None:
@@ -222,15 +283,26 @@ class AnalysisPage(QWidget):
 
     # ── 对外 ──
     def current_key(self) -> str:
-        row = self.list.currentRow()
-        return TASKS[row][0] if 0 <= row < len(TASKS) else ""
+        return self._current
 
     def select_task(self, key: str) -> bool:
-        for i, (k, *_rest) in enumerate(TASKS):
-            if k == key:
-                self.list.setCurrentRow(i)
-                return True
-        return False
+        """切到某个任务（幂等）；key 不在 TASKS 里返回 False。"""
+        names = {k: name for k, name, *_rest in TASKS}
+        if key not in names:
+            return False
+        if key == self._current:
+            return True
+        self._current = key
+        panel = self._pages[key]
+        self.stack.setCurrentWidget(panel)
+        self._mount_top_widget(panel)
+        desc = {k: d for k, _n, d, _r in TASKS}[key]
+        self.btn_task.setText(f"{names[key]}  ▾")
+        self.btn_task.setToolTip(
+            f"切换分析任务（Ctrl+1..{len(TASKS)}）\n当前：{names[key]}——{desc}")
+        self.task_picker.set_current(key)
+        self.status.emit(f"任务：{names[key]}")
+        return True
 
     def prefill_stokes_pair(self, abs_path, em_path) -> bool:
         """V2.6 FR-41.5 ③→②桥接：切到斯托克斯卡并预选一对（**不自动入表**）。
@@ -261,10 +333,7 @@ class AnalysisPage(QWidget):
         """
         self.data_dir = Path(data_dir) if data_dir else self.data_dir
         n = len(scans or [])
-        good = sum(1 for s in (scans or []) if not s.excluded)
-        self.lbl_batch.setText(
-            f"当前批次：{self.data_dir or '未指定'}　|　{n} 个文件（有效 {good}）")
-        # V2.6 FR-40.4：有批次后隐藏空态引导
+        # V2.6 FR-40.4：有批次后隐藏空态引导（批次摘要在主窗口状态栏）
         self.btn_empty_data.setVisible(n == 0)
         if self.data_dir is not None and n:
             # FR-24.9：先预置①数据页的整定，再让 Φ_Δ 页自己载入（载入完成时合并）
@@ -312,9 +381,29 @@ class AnalysisPage(QWidget):
         self._refresh_queue_mutex()
 
     # ── 内部 ──
-    def _on_task(self, row: int) -> None:
-        if not (0 <= row < len(TASKS)):
-            return
-        key = TASKS[row][0]
-        self.stack.setCurrentWidget(self._pages[key])
-        self.status.emit(f"任务：{TASKS[row][1]}")
+    def _mount_top_widget(self, panel: QWidget) -> None:
+        """把 ``panel.top_bar_widget()`` 交上来的控件挂进顶部细条的插槽。
+
+        约定：任务页可实现 ``top_bar_widget(self) -> Optional[QWidget]``，返回自己的
+        流程条/工具条（建议每次返回同一个对象，高度不超过 TOP_BAR_H）。切走时
+        这里只摘下、不删除：``hide()`` 后 ``setParent(原任务页)`` 还给它；没有该方法
+        或返回 None 的任务页，插槽留空。
+        """
+        old, owner = self._top_widget, self._top_owner
+        if old is not None:
+            self._slot_lay.removeWidget(old)
+            old.hide()
+            old.setParent(owner)
+        self._top_widget = self._top_owner = None
+        hook = getattr(panel, "top_bar_widget", None)
+        w = None
+        if callable(hook):
+            try:
+                w = hook()
+            except Exception as err:                   # noqa: BLE001 —— 工具条出错不挡切页
+                log.warning("任务页顶部工具条构建失败：%s", err)
+        if w is not None:
+            self._slot_lay.addWidget(w, 1)
+            w.show()
+            self._top_widget, self._top_owner = w, panel
+        self.top_sep.setVisible(w is not None)

@@ -201,6 +201,12 @@ class MainWindowActionsMixin:
         self.btn_log.setToolTip("展开 / 收起运行日志（Ctrl+L）")
         self.btn_log.setCheckable(True)
         self.btn_log.toggled.connect(self.log_dock.setVisible)
+        if self.layout_mode == "flow":
+            # 图标栏放不下"当前批次"摘要 → 状态栏常驻（排在永久区最左，不被临时消息盖住）
+            self.lbl_context = QLabel("当前批次 未选择")
+            self.lbl_context.setToolTip("当前批次目录：未选择（在 数据 页载入）")
+            theme.mark(self.lbl_context, "muted")
+            self.statusBar().addPermanentWidget(self.lbl_context)
         self.statusBar().addPermanentWidget(self.lbl_stage)
         self.statusBar().addPermanentWidget(self.bar)
         self.statusBar().addPermanentWidget(self.btn_log)
