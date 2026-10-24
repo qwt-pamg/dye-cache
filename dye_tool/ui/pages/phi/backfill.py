@@ -218,6 +218,7 @@ class FigureBackfill(QObject):
         """真正收尾：清掉"到期没人认领"的排队位并刷新计数。"""
         dropped = self.page.canvas.clear_queued()
         n = self.update_progress()
+        self.page._show_progress(False)            # 补渲全部结束：收起进度行
         if dropped:
             self.page.logged.emit("INFO", f"预览档共 {n} 张图件"
                                      f"（{dropped} 个图位本次无内容，已从列表移除）")

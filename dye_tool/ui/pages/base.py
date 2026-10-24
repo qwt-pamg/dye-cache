@@ -101,8 +101,13 @@ class PageBase(QWidget):
         return w
 
     def progress_row(self) -> QWidget:
-        """进度条 + 阶段标签 + 取消按钮。"""
+        """进度条 + 阶段标签 + 取消按钮。
+
+        只在任务运行时出现；成功后收起（结果本身和状态栏已经说明），失败或取消时
+        留下来显示原因。「取消」只在任务运行中出现。
+        """
         w = QWidget()
+        self._progress_widget = w
         self.bar = QProgressBar()
         self.bar.setRange(0, 100)
         self.bar.setValue(0)
@@ -116,7 +121,14 @@ class PageBase(QWidget):
         lay.addWidget(self.bar, 1)
         lay.addWidget(self.lbl_stage)
         lay.addWidget(self.btn_cancel)
+        self.btn_cancel.setVisible(False)
+        w.setVisible(False)
         return w
+
+    def _show_progress(self, on: bool = True) -> None:
+        w = getattr(self, "_progress_widget", None)
+        if w is not None:
+            w.setVisible(on)
 
     # ══════════════ 目录 / 配置 ══════════════
     def pick_dir(self, title: str = "选择数据目录") -> Optional[Path]:
@@ -212,7 +224,9 @@ class PageBase(QWidget):
         self._busy_widgets = list(busy_widgets or [])
         self.bar.setValue(0)
         self.lbl_stage.setText(f"{label}…")
+        self._show_progress()
         self.btn_cancel.setEnabled(True)
+        self.btn_cancel.setVisible(True)
         for w in self._busy_widgets:
             w.setEnabled(False)
 
@@ -238,10 +252,12 @@ class PageBase(QWidget):
         self._busy_widgets = []
         try:
             self.btn_cancel.setEnabled(False)
+            self.btn_cancel.setVisible(False)
         except RuntimeError:                       # pragma: no cover
             pass
 
     def _on_progress(self, pct: int, stage: str) -> None:
+        self._show_progress()
         self.bar.setValue(max(0, min(100, pct)))
         self.lbl_stage.setText(stage)
         self.progress.emit(pct, stage)
@@ -250,6 +266,7 @@ class PageBase(QWidget):
         self._unlock_ui()
         self.bar.setValue(100)
         self.lbl_stage.setText("完成")
+        self._show_progress(False)
         try:
             on_done(res)
         except Exception as err:                       # noqa: BLE001
@@ -260,6 +277,7 @@ class PageBase(QWidget):
     def _on_cancelled(self) -> None:
         """用户取消：恢复界面并说明（S6）。"""
         self._unlock_ui()
+        self._show_progress()
         self.bar.setValue(0)
         self.lbl_stage.setText("已取消")
         self.logged.emit("WARNING", "任务已取消：本次结果被丢弃，界面已恢复可用")
@@ -278,6 +296,7 @@ class PageBase(QWidget):
     def _on_failed(self, summary: str, detail: str) -> None:
         """顶层异常兜底：恢复界面 + 弹窗（设计文档 §7）。"""
         self._unlock_ui()
+        self._show_progress()
         self.bar.setValue(0)
         self.lbl_stage.setText("失败")
         self.logged.emit("ERROR", summary)
@@ -290,6 +309,7 @@ class PageBase(QWidget):
             self.job.cancel()
             self.lbl_stage.setText("已取消（计算在当前阶段结束后停止上报）")
         self.btn_cancel.setEnabled(False)
+        self.btn_cancel.setVisible(False)
 
     # ══════════════ 钩子 ══════════════
     def on_activated(self) -> None:

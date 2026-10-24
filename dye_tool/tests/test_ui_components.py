@@ -117,6 +117,54 @@ def test_result_actions_show_result(qt_app, tmp_path):
     assert a.btn_retry.isEnabled() and a.lbl_fix.text() == "如何修复：x"
 
 
+def test_result_actions_hide_unusable_buttons(qt_app, tmp_path):
+    from ui.widgets.result_actions import ResultActions
+    a = ResultActions()
+    assert a.isHidden()                           # 尚无结果：整条收起，不摆灰按钮
+    a.show_result(True, output=tmp_path, text="k = 1")
+    assert not a.isHidden()
+    assert [b.isHidden() for b in (a.btn_open_output, a.btn_copy_result,
+                                   a.btn_next_step, a.btn_retry)] == [False, False, False, True]
+    a.show_result(False, failure_hint="如何修复：x")
+    assert not a.isHidden() and not a.btn_retry.isHidden()
+    assert a.btn_open_output.isHidden() and a.btn_next_step.isHidden()
+
+
+def test_export_bar_shows_buttons_only_when_usable(qt_app, tmp_path):
+    from ui.widgets.export_bar import ExportBar
+    bar = ExportBar(on_workbook=lambda: None, on_dashboard=lambda: None)
+    assert bar.isHidden()
+    bar.set_data_ready(True)                      # 有数据：只出 QC 体检
+    assert not bar.isHidden() and not bar.btn_dashboard.isHidden()
+    assert bar.btn_open.isHidden() and bar.btn_workbook.isHidden()
+    bar.set_run_dir(tmp_path)                     # 有结果目录：其余按钮出现
+    assert not bar.btn_open.isHidden() and not bar.btn_workbook.isHidden()
+    plain = ExportBar()
+    plain.set_run_dir(tmp_path)
+    assert plain.btn_workbook.isHidden() and plain.btn_dashboard.isHidden()
+
+
+def test_progress_row_hidden_until_first_task(qt_app):
+    import time
+    from PySide6.QtWidgets import QApplication
+    from ui.pages.base import PageBase
+    page = PageBase({"gui": {}})
+    row = page.progress_row()
+    assert row.isHidden() and page.btn_cancel.isHidden()
+    done = []
+    page.run_task(lambda p, l: time.sleep(0.2) or 1, "测试任务", done.append)
+    assert not row.isHidden() and not page.btn_cancel.isHidden()
+    t0 = time.time()
+    while not done and time.time() - t0 < 5:
+        QApplication.processEvents()
+        time.sleep(0.01)
+    QApplication.processEvents()
+    assert done == [1]
+    assert row.isHidden() and page.btn_cancel.isHidden()   # 成功后整行收起
+    page._on_failed("boom", "")
+    assert not row.isHidden() and page.lbl_stage.text() == "失败"   # 失败留下来显示原因
+
+
 # ═══════════════════════ PageBase 公共能力 ═══════════════════════
 class _Mime:
     def __init__(self, paths):

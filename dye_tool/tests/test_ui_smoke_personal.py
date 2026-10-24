@@ -140,6 +140,10 @@ def test_one_analysis_closed_loop(qt_app, tmp_path, monkeypatch):
         assert rr is not None and bool(rr.ok), "分析结果无效"
         assert phi.table.rowCount() > 0, "结果表为空"
         assert rr.run_dir and Path(rr.run_dir).is_dir(), "run 目录未产出"
+        # 结果动作条：成功后出现「打开输出 / 复制结果 / 下一步」，复制文本含各组
+        assert phi.actions.btn_next_step.isEnabled() and not phi.actions.isHidden()
+        assert phi.actions.btn_copy_result.isEnabled()
+        assert all(g in phi._last_result_text for g in rr.results)
 
 
 def test_export_and_preset_roundtrip(tmp_path):

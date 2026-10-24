@@ -14,6 +14,9 @@ from ui import theme
 class ResultActions(QWidget):
     """V2.6 FR-40.5：结果区动作条（Φ_Δ / ε / A@λ / kobs 共用一套组件）。
 
+    尚无结果时整条隐藏；有结果后只出现当下可用的按钮（成功 → 打开 / 复制 / 下一步，
+    失败 → 修复提示 + 重试）。
+
     只做"产物入口 + 下一步 + 失败重试"三件事，不改任何业务逻辑：
 
     * 「打开输出文件」「复制结果」——有产物/结果文本时才可用；
@@ -51,6 +54,7 @@ class ResultActions(QWidget):
         lay = QHBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.addWidget(self.lbl_fix, 1)
+        lay.addStretch(0)                          # 修复提示隐藏时按钮靠右、不被拉宽
         lay.addWidget(self.btn_open_output)
         lay.addWidget(self.btn_copy_result)
         lay.addWidget(self.btn_next_step)
@@ -62,11 +66,13 @@ class ResultActions(QWidget):
         """登记可打开的输出（文件或目录；None = 无产物 → 置灰）。"""
         self._output = Path(path) if path else None
         self.btn_open_output.setEnabled(self._output is not None)
+        self._sync_visibility()
 
     def set_result_text(self, text: str) -> None:
         """登记"复制结果"的文本（空串 → 置灰）。"""
         self._result_text = str(text or "")
         self.btn_copy_result.setEnabled(bool(self._result_text.strip()))
+        self._sync_visibility()
 
     def set_state(self, ok: bool, *, failure_hint: str = "") -> None:
         """成功后开放"下一步"；失败后开放"重试"并显示中文修复提示。"""
@@ -79,6 +85,7 @@ class ResultActions(QWidget):
         else:
             self.lbl_fix.setText(str(failure_hint or ""))
             self.lbl_fix.setVisible(bool(failure_hint))
+        self._sync_visibility()
 
     def show_result(self, ok: bool, *, output=None, text: str = "",
                     failure_hint: str = "") -> None:
@@ -94,6 +101,16 @@ class ResultActions(QWidget):
         for b in (self.btn_open_output, self.btn_copy_result,
                   self.btn_next_step, self.btn_retry):
             b.setEnabled(False)
+        self._sync_visibility()
+
+    def _sync_visibility(self) -> None:
+        """只显示当前用得上的动作：不可用的按钮直接隐藏（不留一排灰按钮），
+        什么都没有时整条收起。"""
+        buttons = (self.btn_open_output, self.btn_copy_result,
+                   self.btn_next_step, self.btn_retry)
+        for b in buttons:
+            b.setVisible(b.isEnabled())
+        self.setVisible(any(b.isEnabled() for b in buttons) or bool(self.lbl_fix.text()))
 
     # ── 动作 ──
     def _open_output(self) -> None:

@@ -293,7 +293,7 @@ class PhiPage(PageBase):
         upper = QSplitter(Qt.Vertical)
         upper.addWidget(box_files)
         upper.addWidget(box_fig)
-        upper.setSizes([220, 420])
+        upper.setSizes([170, 470])          # 图件优先：文件清单够看几行即可
         upper.setChildrenCollapsible(False)
 
         # A 道 FR-23.1：组页签条（QTabBar 只切换**视图过滤**——文件表与画布
@@ -309,7 +309,7 @@ class PhiPage(PageBase):
         right = QSplitter(Qt.Vertical)
         right.addWidget(self._group_tab_host)
         right.addWidget(box_res)
-        right.setSizes([520, 240])
+        right.setSizes([600, 170])
         return right
 
     def _build_settings_column(self) -> None:
@@ -943,16 +943,16 @@ class PhiPage(PageBase):
         results = getattr(rr, "results", None) or {}
         if isinstance(results, dict) and results:
             lines.append("组别\t状态\tk (s⁻¹)\tR²\tΦ_Δ")
+            phi = getattr(rr, "phi", None) or {}
             for group, entry in sorted(results.items()):
-                pooled = (entry or {}).get("pooled") \
-                    if isinstance(entry, dict) else None
-                pooled = pooled or {}
-                status = str(pooled.get("status") or "—")
+                # pooled 是 kinetics.FitResult（属性，不是 dict）；Φ_Δ 在 rr.phi[组]
+                pooled = (entry or {}).get("pooled") if isinstance(entry, dict) else None
+                p = phi.get(group) or {}
                 lines.append("\t".join([
-                    str(group), status,
-                    self._fmt_num(pooled.get("k")),
-                    self._fmt_num(pooled.get("R2")),
-                    self._fmt_num(pooled.get("Phi"))]))
+                    str(group), str(getattr(pooled, "status", None) or "—"),
+                    self._fmt_num(getattr(pooled, "k", None)),
+                    self._fmt_num(getattr(pooled, "r2", None)),
+                    self._fmt_num(p.get("phi")) if p.get("status") == "OK" else "—"]))
         if len(lines) <= (2 if run_dir else 1):        # 退化：直接抄结果表
             for r in range(self.table.rowCount()):
                 cells = []
