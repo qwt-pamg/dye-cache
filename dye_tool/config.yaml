@@ -1,0 +1,324 @@
+# dye_tool 用户配置（与 core.config.DEFAULT_CFG 深合并）
+# 由 GUI 参数面板自动写出，可直接手工编辑；_meta.written_by = 2.0.0
+# 出图参数键位说明见 README 附录 B / core/plotstyle.py
+wavelength:
+  probe: 379.0
+  probe_window: 2.0
+  excitation: 532.0
+  align_tol: 0.51
+baseline:
+  enable: true
+  wl_range:
+  - 650.0
+  - 700.0
+  method: median
+  warn_above: 0.01
+background:
+  enable: true
+  mode: matched
+a0:
+  dark_max_time: 0.0
+  n_early: 2
+kinetics:
+  r_min: 0.3
+  r_max: 1.0
+  r_max_tol: 0.05
+  a_floor: 0.01
+  auto_truncate: true
+  truncate_frac: 0.7
+  curvature_p: 0.05
+  dose_normalize: false
+  irradiance:
+    default: 1.0
+quantum_yield:
+  phi_ref: 0.75
+  phi_ref_err: 0.075
+  iabs_mode: exact
+  a_ex: {}
+  a_ex_err: 0.005
+  bootstrap: false
+  bootstrap_n: 1000
+  seed: 42
+  ifc_warn_above: 0.1
+qc:
+  a0_range:
+  - 0.05
+  - 1.5
+  saturation: 3.0
+  flag_negative: true
+  saturation_counts: 1000000000.0
+  outlier:
+    enable: true
+    window: 7
+    k_mad: 6.0
+    abs_floor: 0.05
+  dark_k_rel_max: 0.05
+  r2_warn: 0.98
+controls:
+  enable: true
+  n2_inhibition_min: 0.7
+  quencher_inhibition_min: 0.7
+plot:
+  style: jacs
+  dpi: 300
+  formats:
+  - svg
+  - png
+  jacs:
+    width_in: 3.25
+    height_in: 2.5
+    fig_heights:
+      a: 2.5
+      b: 2.5
+      c: null
+      d: null
+      e: 3.3
+      stack: 2.5
+      fr4_overlay: 2.5
+      fr4_mirror: 2.6
+      fr4_panel: 3.3
+    bar_row_in: 0.42
+    bar_base_in: 1.05
+    dpi: 600
+    formats:
+    - png
+    font: Arial
+    font_fallback:
+    - Helvetica
+    - DejaVu Sans
+    preview_dpi: 150
+    reuse_rendered: true
+    minor_ticks: true
+    minor_len_frac: 0.55
+    minor_w_frac: 0.75
+    minor_tick_step: 20.0
+    label_size: 7.5
+    tick_size: 7.0
+    legend_size: 6.5
+    annot_size: 7.5
+    spine_width: 0.9
+    tick_width: 0.8
+    tick_length: 2.8
+    tick_direction: in
+    box: true
+    xlim:
+    - 300.0
+    - 700.0
+    xtick_step: 100.0
+    ylim_top_headroom: 0.05
+    xlabel: Wavelength / nm
+    ylabel: Absorbance
+    ylabel_stack: Absorbance (a.u.)
+    legend_loc: best
+    grid: false
+    curve_lw: 1.3
+    annot_lw: 0.8
+    cmap: Blues
+    cmap_lo: 0.3
+    cmap_hi: 0.95
+    fit_color: crimson
+    band_alpha: 0.15
+    trunc_shade_color: '0.5'
+    trunc_shade_alpha: 0.16
+    marker_color: steelblue
+    marker_edge_w: 0.7
+    marker_size: 2.9
+    second_lw_frac: 0.75
+    zero_lw_frac: 0.8
+    zero_line_color: '0.35'
+    trunc_marker_color: crimson
+    fit_failed_color: crimson
+    status_colors:
+      OK: steelblue
+      WARN: darkorange
+      FAILED: crimson
+    annot_color: '0.25'
+    panel_label_fmt: ({})
+    mark_probe: true
+    mark_excitation: false
+    mark_fluorophore: true
+    fluorophore_label: auto
+    fluorophore_search:
+    - 540.0
+    - 620.0
+    fluorophore_window: 4.0
+    probe_label_dx_nm: 4.8
+    probe_label_y_frac: 0.985
+    excitation_label_dx_nm: 4.8
+    excitation_label_y_frac: 0.9
+    fluorophore_label_dx_nm: 6.0
+    fluorophore_label_dy_frac: 0.055
+    trend_arrow: true
+    trend_sign: auto
+    arrow_x_range:
+    - 432.0
+    - 556.0
+    arrow_auto_fallback: true
+    arrow_lane_threshold: 0.06
+    arrow_y_lo_frac: 0.28
+    arrow_y_hi_frac: 0.82
+    arrow_label: t
+    arrow_label_dx_frac: 0.02
+    arrow_color: '0.25'
+    arrow_style: -|>
+    arrow_lane_margin_nm: 3.0
+    stack_arrow_dx_frac: 0.46
+    stack_top_frac: 1.15
+    captions: true
+    show_fit_stats_in_panel: false
+    fr4_label_dy: 0.03
+    fr4_label_dx_nm: 4.0
+    fr4_marker_ms: 2.6
+    fr4_legend_loc_overlay: upper right
+    fr4_legend_loc_mirror: lower right
+    fr4_panel_label_y: 1.0
+    strict: true
+    preview_first: a
+    stack_min_spectra: 2
+    parallel: true
+    parallel_min_tasks: 8
+    parallel_min_seconds: 3.0
+    parallel_workers: 0
+  spectra_overlay:
+    select_times: all
+    cmap: viridis
+    mark_probe: true
+    mark_excitation: true
+    mark_fluorophore: auto
+    fluorophore_search:
+    - 540.0
+    - 620.0
+autogroup:
+  core_lo: 450.0
+  core_hi: 650.0
+  step: 5.0
+  d_max: 0.06
+spectra:
+  normalize: max
+  abs_color: '#1f4e79'
+  em_color: '#C81E1E'
+  export_formats:
+  - png
+  - svg
+  emission_wl_range:
+  - 300.0
+  - 900.0
+  auto_pair_keywords:
+  - pbs
+  - dcm
+  - dmso
+  - etoh
+  - ch3cn
+io:
+  extensions:
+  - .txt
+  - .csv
+  recursive: true
+  exclude:
+  - _
+  separator: ','
+  ncols: 2
+  parallel: true
+  parallel_min_files: 64
+  parallel_workers: 0
+  emission_marker: Data Points
+  emission_wl_range:
+  - 150.0
+  - 1200.0
+  fds:
+    enable: true
+    extensions:
+    - .fds
+    serial_anchor: ''
+  spc:
+    enable: true
+    extensions:
+    - .spc
+filename:
+  time_pattern: ^(?P<stem>.+)-(?P<sec>\d+)(?:\+(?P<min>\d+))?$
+  group_pattern: ^(?P<group>.+?)(?:_(?P<rep>\d+))?$
+  no_time_suffix: zero
+  roles:
+    bg: background
+    blank: blank
+    dark: dark
+    ref: reference
+    n2: n2
+    nan3: quencher
+    azide: quencher
+gui:
+  recent_dirs: []
+  max_recent: 8
+  out_root: runs
+  show_welcome: true
+  lazy_preview: true
+  window:
+    w: 0
+    h: 0
+    x: 0
+    y: 0
+  nav: flow
+dye:
+  enabled: true
+  auto_from: group_first_field
+  dir_scheme: dye
+  history: true
+  params_snapshot: true
+  name_max_len: 60
+  reorg:
+    dry_run: true
+    keep_legacy: true
+    write_report: true
+excel:
+  enabled: true
+  filename: dye_tool_结果汇总.xlsx
+  sheets:
+    summary: true
+    qc: true
+    kinetics: true
+    dyes: true
+    params: true
+  freeze_header: true
+  autofilter: true
+  column_width_max: 60
+  decimals: 6
+extinction:
+  wavelength: null
+  lambda_max_range:
+  - 300.0
+  - 800.0
+  concentrations: []
+  conc_unit: uM
+  path_length_cm: 1.0
+  force_origin: true
+  weighted: false
+  r2_warn: 0.995
+  dev_warn_frac: 0.15
+  filename: extinction.csv
+wavelength_table:
+  wavelengths:
+  - 400.0
+  - 450.0
+  - 500.0
+  - 550.0
+  - 600.0
+  - 650.0
+  - 700.0
+  tol_nm: 0.5
+  interpolate: false
+  include_groups: []
+  include_dyes: []
+  filename: absorbance_at_wavelength.csv
+qc_dashboard:
+  enable: true
+  sat_frac_warn: 0.05
+  nan_frac_warn: 0.05
+  drift_warn: 0.05
+  wl_mismatch_tol: 0.05
+  max_tiles: 60
+  fig_height_in: 6.5
+  export: png
+_meta:
+  written_by: 2.0.0
+  schema: 1
+  written_at: '2026-10-18 00:59:40'

@@ -1,0 +1,39 @@
+# ── Python ──
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# ── 虚拟环境 / 打包中间产物 ──
+.venv/
+build/
+*.spec.bak
+
+# dist/ 是免安装 exe 产物（体积大）。若要随仓库分发可取消下面这行。
+dist/
+
+# ── 运行输出 ──
+# 说明：runs/ 里保存着验收报告与示例 run 目录，默认**保留**以便复核；
+# 如需按需生成，取消下面这行的注释即可。
+# runs/
+
+# 测试临时工作区：所有测试/验收/探针的中间产物都落这里，**不写 C 盘**。
+# 是**本机运行痕迹**（跑完会自清），不该进仓库——但目录本身要留着（含 README.md）。
+test_temp/*
+!test_temp/README.md
+
+# 配置自动快照（FR-9.5：每次写 config.yaml 前留一份，最多 5 份）。
+# 是**本机运行痕迹**，不该进仓库——但它有用，所以别删目录，只忽略。
+config_backup/
+!config_backup/README.md
+
+# 打包产物的自检报告（在 dist/ 下，dist 已忽略；这里兜一层防手滑拷贝）
+selftest_report.txt
+gui_smoke_report.txt
+dye_tool_last_run.log
+
+# ── 编辑器 / 系统 ──
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini

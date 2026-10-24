@@ -1,0 +1,48 @@
+# V2.8 M0 baseline snapshot (workspace root): exclude build artifacts / venv / evidence / temp
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.venv/
+**/.venv/
+**/dist/
+**/build/
+**/test_temp/
+**/runs/*/
+.pip-cache/
+pip-*/
+._*
+.DS_Store
+
+# V2.9.5 FR-73 实时预览临时目录：显式根目录，不得入库（R3-O2）
+dye_preview_*/
+.preview_tmp/
+
+# Public repository: only the root README is published; project docs stay local.
+/dye_tool/**/*.md
+/dye_tool/*.md
+/交接说明.md
+/任务执行规则.md
+# Public repository: internal project-management documents are kept outside Git.
+*.log
+dye_tool/runs/
+dye_tool/_archive/
+dye_tool/tests/data/
+dye_tool/samples/
+dye_tool/.legacy_baseline/
+dye_tool/交付说明.md
+dye_tool/交接说明.md
+dye_tool/代码审查报告.md
+dye_tool/任务执行规则.md
+dye_tool/任务看板.md
+dye_tool/双窗口协作协议.md
+dye_tool/子智能体守则.md
+dye_tool/审查发现_待修.md
+dye_tool/工程任务书_*.md
+dye_tool/计划书*.md
+dye_tool/重构*.md
+dye_tool/Origin*.md
+dye_tool/docs/口径修订_*.md
+dye_tool/docs/幽灵*.md
+dye_tool/docs/测试提速*.md
+dye_tool/docs/验收拆包*.md
