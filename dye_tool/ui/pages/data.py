@@ -804,11 +804,10 @@ class DataPage(PageBase):
         return {"dye_of": dye_of, "times": times}
 
     def _go_analysis(self) -> None:
-        """主按钮：批次与整定已随 batch_changed 同步，这里只切到「分析」页。"""
+        """主按钮：批次与整定已随 batch_changed 同步，这里只请求切到「分析」页
+        （主窗口接 :attr:`analysis_requested` 切页）。"""
+        self.status.emit("批次已同步到「分析」页")
         self.analysis_requested.emit()
-        goto = getattr(self.window(), "goto", None)
-        if not (callable(goto) and goto("analysis")):
-            self.status.emit("批次已同步，请在左侧切到「分析」页")
 
     def _mark_suspects(self) -> None:
         """FR-19：把解析可疑的行**在表里**标出来（工具提示 + 汇总一条）。"""

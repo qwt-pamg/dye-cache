@@ -54,7 +54,8 @@ def test_photophysics_workbench_steps_center_and_actions(qt_app, tmp_path):
         _check_steps(p, STEPS)
         p._go_step(1)
         assert p.center_stack.currentWidget() is p.tab_bleach
-        assert p.action_stack.currentWidget() is p.tab_bleach.primary_actions
+        assert not p.tab_bleach.primary_actions.isHidden()
+        assert p.tab_phi.primary_actions.isHidden() and p.tab_char.primary_actions.isHidden()
 
         csv = tmp_path / "roi.csv"
         csv.write_text("time,intensity\n" + "".join(

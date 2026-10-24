@@ -42,6 +42,21 @@ def test_step_inspector_pages_summaries_and_navigation(qt_app):
     assert ins.btn_next.isHidden() and ins.lbl_hint.text() == "导出表格"
 
 
+def test_step_actions_only_show_on_their_steps(qt_app):
+    from ui.widgets.step_inspector import StepInspector
+    ins = StepInspector(["a", "b", "c"])
+    every, only_b, b_or_c = QPushButton("all"), QPushButton("b"), QPushButton("bc")
+    ins.add_action(every)
+    ins.add_action(only_b, steps=1)
+    ins.add_action(b_or_c, steps=[1, 2])
+    ins.set_current(0)
+    assert [w.isHidden() for w in (every, only_b, b_or_c)] == [False, True, True]
+    ins.set_current(1)
+    assert [w.isHidden() for w in (every, only_b, b_or_c)] == [False, False, False]
+    ins.set_current(2)
+    assert [w.isHidden() for w in (every, only_b, b_or_c)] == [False, True, False]
+
+
 def test_single_step_inspector_hides_navigation(qt_app):
     from ui.widgets.step_inspector import StepInspector
     ins = StepInspector(["设置"])

@@ -68,7 +68,6 @@ class PhotophysicsPanel(PageBase):
         self.flow_bar.step_clicked.connect(self._go_step)
         self.verdict = VerdictCard()
         self.inspector = StepInspector(STEPS, STEP_HINTS)
-        self.action_stack = QStackedWidget()
 
         self.tab_phi = QuantumYieldTab(self)
         self.tab_bleach = PhotobleachTab(self)
@@ -79,9 +78,7 @@ class PhotophysicsPanel(PageBase):
         for i, tab in enumerate(self._tabs):
             self.center_stack.addWidget(tab)
             self.inspector.set_page(i, _scrolled(tab.settings))
-            self.action_stack.addWidget(tab.primary_actions)
-        # 主按钮随步切换：一个叠放页挂在检查器的主按钮位
-        self.inspector.add_action(self.action_stack)
+            self.inspector.add_action(tab.primary_actions, steps=i)   # 每步自己的主按钮
         self.inspector.step_requested.connect(self._go_step)
         self.inspector.set_summary_provider(self._step_summary)
 
@@ -110,7 +107,6 @@ class PhotophysicsPanel(PageBase):
         idx = max(0, min(len(STEPS) - 1, int(idx)))
         self.flow_bar.set_current(idx)
         self.center_stack.setCurrentIndex(idx)
-        self.action_stack.setCurrentIndex(idx)
         self.inspector.set_current(idx)
         self.refresh()
 

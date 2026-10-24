@@ -202,11 +202,14 @@ def test_settings_theme_switch_goes_through_main_window(qt_app, tmp_path, monkey
         win.goto("settings")
         _pump(qt_app)
         sp = win.settings_page
+        got = []
+        win.theme_changed.connect(got.append)
         sp.theme_buttons["dark"].click()
         assert win.cfg["gui"]["theme"] == "dark" and theme.current() == "dark"
         assert win.theme_actions["dark"].isChecked()
         win.theme_actions["light"].trigger()             # 菜单改回 → 设置页同步
         assert sp.theme_buttons["light"].isChecked()
+        assert got == ["dark", "light"]                  # 两条路都经 MainWindow.set_theme
     finally:
         theme.apply("light")
         win.close()

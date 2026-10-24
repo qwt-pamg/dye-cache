@@ -69,7 +69,6 @@ class SettingsPage(PageBase):
     def __init__(self, cfg: Optional[dict] = None,
                  parent: Optional[QWidget] = None):
         super().__init__(cfg, parent)
-        self._menu_synced = False
         self._build()
 
     def _build(self) -> None:
@@ -245,31 +244,30 @@ class SettingsPage(PageBase):
         self.theme_buttons[self._theme_mode()].setChecked(True)
 
     def set_theme(self, mode: str) -> None:
-        """切界面主题：立即整窗生效、写回 ``gui.theme`` 并保存；菜单勾选跟着变。"""
+        """切界面主题：在主窗口里走 ``MainWindow.set_theme``（与菜单同一路）；
+        单独使用本页时直接应用并存盘。"""
         if mode not in theme.THEMES:
             return
         win = self.window()
-        switch = getattr(win, "_switch_theme", None)
-        if callable(switch):
-            switch(mode)        # 主窗口：写 cfg、整窗换色、存盘、状态栏提示（与菜单同一路）
-        else:
-            self.cfg.setdefault("gui", {})["theme"] = mode
-            theme.apply(mode)
-            self.persist_cfg()
-            self.status.emit(f"界面主题：{theme.THEME_LABELS[mode]}")
-        act = (getattr(win, "theme_actions", None) or {}).get(mode)
-        if act is not None:
-            act.setChecked(True)
-        self.theme_buttons[mode].setChecked(True)
+        if win is not self and hasattr(win, "theme_changed"):
+            win.set_theme(mode)       # 主窗口发 theme_changed → sync_theme 勾上按钮
+            return
+        self.cfg.setdefault("gui", {})["theme"] = mode
+        theme.apply(mode)
+        self.persist_cfg()
+        self.status.emit(f"界面主题：{theme.THEME_LABELS[mode]}")
+        self.sync_theme(mode)
+
+    def sync_theme(self, mode: str) -> None:
+        """主题已经切好（菜单或本页）：三段切换跟着勾上。"""
+        btn = self.theme_buttons.get(mode)
+        if btn is not None:
+            btn.setChecked(True)
 
     def showEvent(self, event) -> None:                # noqa: N802 —— Qt 约定
         """每次显示都按当前 ``gui.theme`` 刷新三段切换；首次显示时接上菜单的主题项。"""
         super().showEvent(event)
         self._sync_theme_buttons()
-        if not self._menu_synced:
-            for act in (getattr(self.window(), "theme_actions", None) or {}).values():
-                act.triggered.connect(lambda *_: self._sync_theme_buttons())
-            self._menu_synced = True
 
     # ── 参数 ──
     def _params_changed(self) -> None:

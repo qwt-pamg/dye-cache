@@ -142,6 +142,23 @@ def test_data_page_go_analysis_and_overrides(data_page, tmp_path):
     assert ov["times"]["A-30.txt"] == 45.0 and "A" in ov["dye_of"]
 
 
+def test_main_window_follows_data_page_go_analysis(qt_app, tmp_path, monkeypatch):
+    """「去分析 →」只发信号；切页由主窗口接 analysis_requested 完成。"""
+    monkeypatch.setenv("DYE_TOOL_CONFIG", str(tmp_path / "cfg.yaml"))
+    from ui.window.main_window import MainWindow
+    cfg = default_config()
+    cfg.setdefault("gui", {}).update({"show_welcome": False, "recent_dirs": []})
+    win = MainWindow(cfg)
+    try:
+        win.goto("data")
+        _load(win.data_page, tmp_path)
+        win.data_page.btn_analyze.click()
+        assert win.stack.currentWidget() is win.analysis_page
+    finally:
+        win.close()
+        win.deleteLater()
+
+
 def test_data_page_recent_dirs_in_import_step(qt_app, tmp_path, monkeypatch):
     from PySide6.QtWidgets import QPushButton
     from ui.pages.data import DataPage

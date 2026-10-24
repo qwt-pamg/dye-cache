@@ -377,11 +377,11 @@ class PhiPage(PageBase):
         live.addWidget(self.chk_live)
         live.addWidget(self.lbl_live, 1)
         lfg.addLayout(live)
-        lfg.addWidget(self.btn_final)
 
         ins = StepInspector(STEPS, STEP_HINTS)
         for i, w in enumerate((p_import, self.dye_panel, scroll_p, p_phi, p_fig)):
             ins.set_page(i, w)
+        ins.add_action(self.btn_final, steps=STEPS.index("出图导出"))
         ins.add_action(self.btn_run)
         ins.step_requested.connect(self._go_step)
         ins.set_summary_provider(self._step_summary)

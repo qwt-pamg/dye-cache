@@ -31,7 +31,7 @@ from ui.widgets.flow_bar import STEP_DONE, STEP_STALE, STEP_TODO, FlowBar
 from ui.widgets.result_actions import ResultActions
 from ui.widgets.step_inspector import StepInspector, three_columns
 from ui.widgets.verdict import VerdictCard
-from ui.pages.tasks.common import _ParamTable, _mark_param_cell, _park_unshown
+from ui.pages.tasks.common import _ParamTable, _mark_param_cell
 from ui import theme
 
 log = logging.getLogger("dye_tool.ui.analysis")
@@ -141,7 +141,6 @@ class WavelengthPanel(PageBase):
         self._update_verdict()
         self._go_step(0)
         self._update_flow()
-        _park_unshown(self.inspector)
 
     def top_bar_widget(self) -> QWidget:
         """分析页顶部细条插槽的约定：交出流程条（同一对象，切走时会还回来）。"""

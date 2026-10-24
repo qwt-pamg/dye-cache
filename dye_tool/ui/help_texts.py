@@ -147,6 +147,10 @@ class DisabledReasonFilter(QObject):
 
     def _cursor_over_target(self) -> bool:
         try:
+            # 被藏起来的控件（如检查器里当前步的摘要、第一步的「←」）几何仍是默认值，
+            # 光看几何会把它们的说明误弹出来
+            if self._widget.isHidden():
+                return False
             par = self._widget.parentWidget()
             if par is not None:
                 pos = par.mapFromGlobal(QCursor.pos())

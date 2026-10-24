@@ -127,7 +127,7 @@ class MainWindowActionsMixin:
         for key in theme.THEMES:
             a = QAction(theme.THEME_LABELS[key], self, checkable=True)
             a.setChecked(key == cur_theme)
-            a.triggered.connect(lambda _=False, k=key: self._switch_theme(k))
+            a.triggered.connect(lambda _=False, k=key: self.set_theme(k))
             grp_theme.addAction(a)
             m_theme.addAction(a)
             self.theme_actions[key] = a
@@ -169,12 +169,19 @@ class MainWindowActionsMixin:
         self.on_status(f"布局已保存：下次启动使用「{name}」（当前窗口不变）")
         self.on_logged("INFO", f"布局切换已保存：gui.nav={mode}（重启生效）")
 
-    def _switch_theme(self, mode: str) -> None:
-        """切换界面主题：立即整窗生效并写回 ``gui.theme``。"""
+    def set_theme(self, mode: str) -> None:
+        """切换界面主题（菜单与设置页共用）：整窗生效、写回 ``gui.theme``、
+        菜单勾选跟着变，并发出 ``theme_changed``。"""
+        if mode not in theme.THEMES:
+            return
         self.cfg.setdefault("gui", {})["theme"] = mode
         theme.apply(mode)
         self._save_cfg()
+        act = (getattr(self, "theme_actions", None) or {}).get(mode)
+        if act is not None:
+            act.setChecked(True)
         self.on_status(f"界面主题：{theme.THEME_LABELS.get(mode, mode)}（画布工具栏图标重启后跟随）")
+        self.theme_changed.emit(mode)
 
     def _validate_cfg(self) -> None:
         """当前配置全量校验（FR-10.1）。"""

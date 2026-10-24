@@ -116,11 +116,3 @@ class _ParamTable(QTableWidget):
                                 self._editable_col)
         return True
 
-
-def _park_unshown(inspector) -> None:
-    """检查器里还没显示过的隐藏按钮（当前步的摘要、第 0 步的「←」）几何仍是 Qt 默认的
-    640×480；悬停帮助在父控件 Enter 时按几何判断"光标在不在它上面"，不看是否可见，
-    会把这些隐藏按钮的提示误弹出来。建好检查器后先把它们的几何收成 0。"""
-    for b in list(inspector.summaries) + [inspector.btn_prev, inspector.btn_next]:
-        if b.isHidden():
-            b.setGeometry(0, 0, 0, 0)

@@ -21,7 +21,7 @@
 """
 from __future__ import annotations
 
-from typing import Callable, Optional, Sequence
+from typing import Callable, Iterable, Optional, Sequence, Union
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QPushButton,
@@ -59,6 +59,8 @@ class StepInspector(QFrame):
         self._hints = list(hints) + [""] * (len(self._steps) - len(hints))
         self._current = -1
         self._summary_of: Callable[[int], str] = lambda _i: ""
+        #: 主按钮及其所属步（None = 每步都显示）
+        self._step_actions: list[tuple[QWidget, Optional[frozenset]]] = []
 
         self.lbl_step = QLabel("")
         theme.mark(self.lbl_step, "strong")
@@ -124,9 +126,20 @@ class StepInspector(QFrame):
     def page(self, idx: int) -> QWidget:
         return self.stack.widget(idx)
 
-    def add_action(self, widget: QWidget) -> None:
-        """主按钮（如「▶ 开始分析」）放在摘要下方、前后步上方。"""
+    def add_action(self, widget: QWidget,
+                   steps: Union[int, Iterable[int], None] = None) -> None:
+        """主按钮（如「▶ 开始分析」）放在摘要下方、前后步上方。
+
+        ``steps`` 给定时只在这些步显示（如光物理每步一套主按钮、出图那一步的
+        「定稿出图」）；不给则每步都显示。
+        """
+        own = None
+        if steps is not None:
+            own = frozenset([steps] if isinstance(steps, int) else steps)
+        self._step_actions.append((widget, own))
         self._actions.addWidget(widget)
+        if own is not None:
+            widget.setVisible(self._current in own)
 
     def set_summary_provider(self, fn: Callable[[int], str]) -> None:
         """``fn(i) -> str``：第 i 步当前设置的一行摘要（只读已有状态）。"""
@@ -157,6 +170,9 @@ class StepInspector(QFrame):
             self.btn_next.setVisible(not last)
             if not last:
                 self.btn_next.setText(f"下一步：{self._steps[idx + 1]} →")
+        for w, own in self._step_actions:
+            if own is not None:
+                w.setVisible(idx in own)
         self.set_next_enabled(next_enabled)
         self.refresh_summaries()
 

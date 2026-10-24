@@ -327,15 +327,18 @@ class MainWindowNavMixin:
     def _on_page_run_finished(self, rr) -> None:
         """分析页里的任务跑完 → 更新日志/状态（图件与结果由各页自己展示）。
 
-        A16（V2.x 审查）：原文案恒为"分析完成"，但这里也会收到 ε 计算 / A@λ 表 /
-        导出这类**非分析**任务的完成信号 → 日志里出现"分析完成：ok=False"噪声。
-        改为中性措辞 + 带上任务类型（能从结果对象判断时）。
+        A16（V2.x 审查）：这里也会收到载入清单、ε 计算、A@λ 表这类任务的完成信号，
+        它们的结果是 list / tuple，**没有** ``ok`` 字段。以前按 ``ok=False`` 记成
+        "list 结束：ok=False"警告——其实任务成功了。现在只对带 ``ok`` 的流水线结果
+        说话，其余由各页自己报告；失败的任务走 ``_on_failed``，不会到这里。
         """
-        ok = bool(getattr(rr, "ok", False))
-        kind = type(rr).__name__ if rr is not None else "任务"
-        msg = getattr(rr, "message", "") if rr is not None else ""
-        self.on_logged("INFO" if ok else "WARNING",
-                       f"{kind} 结束：ok={ok}" + (f"；{msg}" if msg else ""))
+        if rr is None or not hasattr(rr, "ok"):
+            return
+        msg = str(getattr(rr, "message", "") or "")
+        if rr.ok:
+            self.on_logged("INFO", "任务完成" + (f"：{msg}" if msg else ""))
+        else:
+            self.on_logged("WARNING", "任务没有得到结果" + (f"：{msg}" if msg else ""))
 
     def _nav_hint_if_old_config(self) -> None:
         """旧配置（无 ``gui.nav`` 键）→ 首启一次性提示"可切回经典布局"（Q7）。

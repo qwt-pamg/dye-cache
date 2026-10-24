@@ -11,7 +11,7 @@ import logging
 import os
 from pathlib import Path
 from typing import Optional
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QTimer, Signal
 from PySide6.QtGui import QKeySequence
 from PySide6.QtGui import QShortcut
 from PySide6.QtWidgets import QCheckBox
@@ -41,6 +41,9 @@ log = logging.getLogger("dye_tool.ui.window.main_window")
 
 class MainWindow(QMainWindow, MainWindowNavMixin, MainWindowActionsMixin):
     """主窗口：装配层薄壳（V2.8 FR-48 拆分；行为零变）。"""
+
+    #: 界面主题切换完成（菜单或设置页触发，参数是 ``gui.theme`` 的新值）
+    theme_changed = Signal(str)
 
     def __init__(self, cfg: Optional[dict] = None, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -346,6 +349,7 @@ class MainWindow(QMainWindow, MainWindowNavMixin, MainWindowActionsMixin):
                            self.plot_page.fluor])
         self.archive_page = ArchivePage(self.cfg, dye_page=self.dye_page)
         self.settings_page = SettingsPage(self.cfg)
+        self.theme_changed.connect(self.settings_page.sync_theme)
         self.flow_pages = {
             "home": self.home_page,
             "data": self.data_page,
@@ -377,6 +381,7 @@ class MainWindow(QMainWindow, MainWindowNavMixin, MainWindowActionsMixin):
         self.home_page.recent_dir_requested.connect(self._open_recent_dir)
         self.nav.navigated.connect(self._on_nav)
         self.data_page.batch_changed.connect(self._on_batch_changed)
+        self.data_page.analysis_requested.connect(lambda: self.goto("analysis"))
         self.data_page.analysis_preset_applied.connect(
             self._on_analysis_preset_applied)
         self.analysis_page.page_run_finished.connect(self._on_page_run_finished)

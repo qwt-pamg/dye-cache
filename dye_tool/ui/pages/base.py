@@ -267,6 +267,8 @@ class PageBase(QWidget):
         self.bar.setValue(100)
         self.lbl_stage.setText("完成")
         self._show_progress(False)
+        # 主窗口状态栏的进度条只听 progress 信号：不报终点它会停在最后一次的百分比
+        self.progress.emit(100, "完成")
         try:
             on_done(res)
         except Exception as err:                       # noqa: BLE001
@@ -280,6 +282,7 @@ class PageBase(QWidget):
         self._show_progress()
         self.bar.setValue(0)
         self.lbl_stage.setText("已取消")
+        self.progress.emit(0, "已取消")
         self.logged.emit("WARNING", "任务已取消：本次结果被丢弃，界面已恢复可用")
 
     def _report_modal(self, summary: str, detail: str) -> None:
@@ -299,6 +302,7 @@ class PageBase(QWidget):
         self._show_progress()
         self.bar.setValue(0)
         self.lbl_stage.setText("失败")
+        self.progress.emit(0, "失败")
         self.logged.emit("ERROR", summary)
         log.error("%s", summary)
         self._report_modal(summary, detail)

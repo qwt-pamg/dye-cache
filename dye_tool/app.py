@@ -123,6 +123,14 @@ def run_headless(argv: list[str]) -> int | None:
 
 
 # ═══════════════════════════ 冻结产物 GUI 冒烟（P3 的验证门） ═══════════════════════════
+
+def _smoke_tmp_root() -> Path:
+    """门自检的临时根目录：程序目录下的 ``.preview_tmp``（可用 ``DYE_TOOL_PREVIEW_ROOT``
+    改到别处），不用系统临时目录——维护者要求不往系统盘写临时文件。"""
+    root = Path(os.environ.get("DYE_TOOL_PREVIEW_ROOT") or (app_root() / ".preview_tmp"))
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
 def _gui_smoke(argv: list[str]) -> int:
     """离屏构建主窗口并跑一条精简流水线，用于**验证打包产物里 Qt/matplotlib 模块齐备**。
 
@@ -239,7 +247,7 @@ def _gui_smoke(argv: list[str]) -> int:
         svg = ('<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32">'
                '<rect width="32" height="32" fill="#C81E1E"/></svg>')
         with tempfile.NamedTemporaryFile("w", suffix=".svg", delete=False,
-                                         encoding="utf-8") as fh:
+                                         encoding="utf-8", dir=str(_smoke_tmp_root())) as fh:
             fh.write(svg)
             path = fh.name
         try:
@@ -263,8 +271,9 @@ def _gui_smoke(argv: list[str]) -> int:
     # ── L3（评审记录）：门的产物必须落在**临时目录**，不能污染交付目录 ──
     # 原先 out_root = exe 同级 runs_gui_smoke：每跑一次门就在交付目录里新建一个
     # 完整 run（results.csv + xlsx + 8 张 png），反复跑持续膨胀。
+    # 临时目录用程序目录下的 .preview_tmp（不写系统盘 %TEMP%，结束即删）。
     import tempfile
-    smoke_dir = Path(tempfile.mkdtemp(prefix="dye_gui_smoke_"))
+    smoke_dir = Path(tempfile.mkdtemp(prefix="dye_gui_smoke_", dir=str(_smoke_tmp_root())))
 
     def _pipeline():
         from core.config import default_config
