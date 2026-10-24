@@ -20,15 +20,12 @@ from pathlib import Path
 import numpy as np
 from typing import Optional
 
-from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtWidgets import (QCheckBox, QComboBox, QFormLayout, QGroupBox,
-                               QHBoxLayout, QInputDialog, QLabel, QLineEdit,
-                               QPushButton, QScrollArea, QSplitter,
-                               QStackedWidget, QVBoxLayout, QWidget)
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QPushButton, QScrollArea, QSplitter, QStackedWidget, QVBoxLayout, QWidget)
 
 from core.io import collect_scans
 from core.pipeline import run_stack
-from ui.pages.base import PageBase
+from ui.pages.workbench import WorkbenchPage
 from ui.widgets.export_bar import ExportBar
 from ui.widgets.file_table import FileTable
 from ui.widgets.live_plot import LivePlotCanvas, label_text
@@ -38,18 +35,18 @@ from ui import theme
 
 #: V2.6 FR-38.3：作图台布局适配基线（参数/文件表最小高度 / 水平 body 左栏 360–470）
 PARAM_TABLE_MIN_H = 140
-BODY_LEFT_MIN_W, BODY_LEFT_MAX_W = 360, 470
 
 
-class StackPage(PageBase):
+class StackPage(WorkbenchPage):
     """光谱堆叠/叠加图页。"""
 
     TITLE = "③ 光谱堆叠图 / 时间演化叠加图"
     SUBTITLE = ("每组一张 JACS 堆叠图，另出时间演化叠加图（按辐照时间着色，"
                 "标注 ABDA 探针峰、激发波长与荧光团最大吸收）。"
                 "工作视图可直接交互；定稿图用「生成定稿图」。")
-    #: 「写入出图参数」后向主窗口冒泡（FR-33.3：广播 cfg + Φ_Δ 过期横幅）
-    plot_params_written = Signal(dict)
+    PRESET_SECTION = "stack"
+    PAGE_MARK = "③"
+    BODY_LEFT_MIN_W = 360
 
     def __init__(self, cfg: Optional[dict] = None, parent: Optional[QWidget] = None):
         super().__init__(cfg, parent)
@@ -157,8 +154,8 @@ class StackPage(PageBase):
         left_scroll.setWidget(left)
         left_scroll.setWidgetResizable(True)
         left_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        left_scroll.setMinimumWidth(BODY_LEFT_MIN_W)
-        left_scroll.setMaximumWidth(BODY_LEFT_MAX_W)
+        left_scroll.setMinimumWidth(self.BODY_LEFT_MIN_W)
+        left_scroll.setMaximumWidth(self.BODY_LEFT_MAX_W)
         left = left_scroll
 
         # V2.5 FR-32/34：工作视图（活画布）与定稿预览分离
@@ -281,42 +278,6 @@ class StackPage(PageBase):
             lambda *_: self._rebuild_working_view())
 
     # ══════════════ V2.6 FR-38.3：水平 body splitter 自适应 ══════════════
-    def _body_left_width(self) -> int:
-        """左栏初值按页面宽度自适应（360–470，右栏 stretch 1）。"""
-        return max(BODY_LEFT_MIN_W,
-                   min(BODY_LEFT_MAX_W, int(round(self.width() * 0.30))))
-
-    def showEvent(self, event) -> None:                # noqa: N802
-        """首次显示后按真实布局尺寸校正 splitter 初值（构造期尚不知道窗口尺寸）。"""
-        super().showEvent(event)
-        if not getattr(self, "_layout_inited", False):
-            QTimer.singleShot(0, self._init_layout_sizes)
-
-    def resizeEvent(self, event) -> None:              # noqa: N802
-        """页面真正拿到窗口尺寸后再校正一次（一次性；之后用户拖动优先）。"""
-        super().resizeEvent(event)
-        if not getattr(self, "_layout_inited", False):
-            QTimer.singleShot(0, self._init_layout_sizes)
-
-    def _init_layout_sizes(self) -> None:
-        """按首次布局出的真实尺寸校正 body / 右栏垂直 splitter（一次性）。"""
-        if getattr(self, "_layout_inited", False):
-            return
-        if not self.isVisible() or self.width() < 500 or self.height() < 250:
-            return                  # 未真正显示 / 尺寸未定 → 等下一次 show/resize
-        self._layout_inited = True
-        try:
-            w = self._body_left_width()
-            self.body.setSizes([w, max(1, self.width() - w)])
-        except Exception:                              # noqa: BLE001 —— 布局未就绪时保持构造初值
-            pass
-        try:
-            h = self.right_split.height()
-            if h > 0:
-                canvas = max(140, min(int(round(h * 0.65)), h - 90))
-                self.right_split.setSizes([canvas, max(90, h - canvas)])
-        except Exception:                              # noqa: BLE001
-            pass
 
     # ══════════════ 配置同步 ══════════════
     def _style_section(self) -> tuple[dict, bool]:
@@ -352,33 +313,6 @@ class StackPage(PageBase):
             "mark_fluorophore": bool(self.chk_fluor.isChecked()),
         }
 
-    def _refresh_display_presets(self) -> None:
-        from core.render.plotstyle import list_display_presets
-        self.cmb_display_preset.blockSignals(True)
-        self.cmb_display_preset.clear()
-        self.cmb_display_preset.addItem("（当前设置）")
-        self.cmb_display_preset.addItems(list_display_presets("stack"))
-        self.cmb_display_preset.blockSignals(False)
-
-    def _on_display_preset_chosen(self, idx: int) -> None:
-        if idx <= 0:
-            return
-        from core.render.plotstyle import load_display_preset
-        name = self.cmb_display_preset.itemText(idx)
-        vals = load_display_preset("stack", name)
-        if vals is not None:
-            self.apply_display_preset(vals)
-            self.status.emit(f"已套用③显示预设：{name}")
-
-    def _save_display_preset_dialog(self) -> None:
-        from core.render.plotstyle import save_display_preset
-        name, ok = QInputDialog.getText(self, "保存③显示预设", "预设名：")
-        if not ok or not name.strip():
-            return
-        save_display_preset("stack", name.strip(), self.display_preset_values())
-        self._refresh_display_presets()
-        self.status.emit(f"已保存③显示预设：{name.strip()}")
-
     def apply_display_preset(self, values: dict) -> None:
         """套用 ③ 显示预设（未知键忽略；不写 config.yaml）。"""
         v = dict(values or {})
@@ -401,10 +335,6 @@ class StackPage(PageBase):
         return cfg
 
     # ══════════════ 载入 ══════════════
-    def _choose_dir(self) -> None:
-        d = self.pick_dir()
-        if d:
-            self._load_dir(d)
 
     def on_dir_dropped(self, d: Path) -> None:
         self._load_dir(d)
@@ -468,11 +398,6 @@ class StackPage(PageBase):
             self._schedule_preview()
 
     # ══════════════ V2.5 FR-32/34：工作视图（活画布） ══════════════
-    def _on_view_changed(self, idx: int) -> None:
-        """工作视图 ⇄ 定稿预览（定稿预览**不触发**生成）。"""
-        self.view_stack.setCurrentIndex(1 if idx == 1 else 0)
-        if idx == 1 and not getattr(self, "_final_figs", None):
-            self.status.emit("尚未生图：请先点「生成定稿图」")
 
     def _working_scans(self) -> list:
         """工作视图数据 = 页面 despiked 数组（"作图前去尖峰"复选框同一口径）。"""
@@ -499,18 +424,6 @@ class StackPage(PageBase):
                                         f"{fallback}（不会写入 cfg）")
             return fallback
         return cmap
-
-    def _working_cmap_range(self) -> tuple:
-        """色带区间：默认 0.05/0.95；风格栏「可映射键」即时预览优先（会话级）。"""
-        values = getattr(self, "_mapped_preview_values", {}) or {}
-        try:
-            lo = float(values.get("cmap_lo", 0.05))
-            hi = float(values.get("cmap_hi", 0.95))
-        except (TypeError, ValueError):
-            lo, hi = 0.05, 0.95
-        if not (0.0 <= lo < hi <= 1.0):
-            lo, hi = 0.05, 0.95
-        return lo, hi
 
     def _rebuild_working_view(self) -> None:
         """从**页面 despiked 数组**直接绘制工作视图（不调用渲染器）。"""
@@ -583,37 +496,11 @@ class StackPage(PageBase):
         self.cmb_view.setCurrentIndex(0)
         self.view_stack.setCurrentIndex(0)
 
-    def _export_working_view(self) -> None:
-        """按当前工作视图导出 workspace_stack_*.png/svg（零 PDF、不覆盖 fig_*）。"""
-        from datetime import datetime
-
-        from core.paths import resolve_out_root
-        from core.render.plotstyle import filter_formats
-        out_root = resolve_out_root(self.cfg)
-        stem = "workspace_stack_" + datetime.now().strftime("%H%M%S")
-        made = []
-        for ext in filter_formats(["png", "svg"]):
-            p = out_root / f"{stem}.{ext}"
-            i = 2
-            while p.exists():
-                p = out_root / f"{stem}-{i}.{ext}"
-                i += 1
-            got = self.live.save_figure(p)
-            if got:
-                made.append(got)
-        if made:
-            names = "、".join(Path(x).name for x in made)
-            self.logged.emit("INFO", f"工作视图已导出：{names} → {out_root}")
-            self.status.emit(f"工作视图导出完成：{names}")
-        else:
-            self.logged.emit("WARNING", "工作视图导出失败（无数据或写盘失败）")
-
     # ── V2.5 FR-33：风格栏桥接（实时=重绘；写入/预设=显式动作） ──
-    def _sync_style_panel(self) -> None:
-        if hasattr(self, "style_panel"):
-            self.style_panel.set_curves(self.live.curve_info())
-        # V25-B3：用 cfg 播种可映射键（用户已编辑过则不覆盖）
-        self._seed_style_panel()
+
+    def _apply_loaded_style(self, vals: dict) -> None:
+        if vals.get("cmap"):
+            self.ed_cmap.setText(str(vals["cmap"]))
 
     def _seed_style_panel(self) -> None:
         """用 cfg 的 plot.jacs 播种可映射键（V25-B3）。
@@ -628,24 +515,6 @@ class StackPage(PageBase):
             return
         if self.style_panel.seed_mapped_values(values):
             self._mapped_preview_values = dict(values)
-
-    def _on_live_style(self, key: str, style: dict) -> None:
-        """编辑 → 活画布 artist 属性（不触发渲染器；FR-33.2）。"""
-        self.live.set_style(key, **(style or {}))
-
-    def _on_style_rejected(self, msg: str) -> None:
-        """非法样式/颜色被拒绝 → 状态栏 + 日志提示（V25-B4：不崩、不改画布）。"""
-        self.logged.emit("WARNING", str(msg))
-        self.status.emit(str(msg))
-
-    def _on_mapped_preview(self, values: dict) -> None:
-        """可映射键即时预览（会话级；不写 cfg，需显式「写入出图参数」）。"""
-        self._mapped_preview_values = dict(values or {})
-        self._rebuild_working_view()
-
-    def _jacs_section(self) -> dict:
-        plot = self.cfg.setdefault("plot", {})
-        return plot.setdefault("jacs", {})
 
     def _on_write_plot_params(self, values: dict) -> None:
         """FR-33.3：显式写入 cfg + 保存 → 冒泡给主窗口广播/Φ_Δ 横幅。
@@ -670,67 +539,6 @@ class StackPage(PageBase):
             self.status.emit("出图参数已写入并广播")
         except Exception as err:                       # noqa: BLE001
             self.logged.emit("ERROR", f"写入出图参数失败：{err}")
-
-    def _on_save_plot_preset(self, values: dict) -> None:
-        """FR-33.4：另存为 presets.yaml v2 的 plot 预设（V2.4 机制复用）。"""
-        from PySide6.QtWidgets import QInputDialog
-        name, ok = QInputDialog.getText(self, "另存为预设", "预设名：")
-        name = str(name or "").strip()
-        if not ok or not name:
-            return
-        try:
-            from core.render import plotstyle
-            plotstyle.save_user_preset(name, dict(values or {}))
-            self.logged.emit("INFO", f"出图预设已另存：{name}"
-                                     "（presets.yaml v2 plot 节）")
-            self._apply_preset_to_working(name)
-        except Exception as err:                       # noqa: BLE001
-            self.logged.emit("ERROR", f"另存为预设失败：{err}")
-
-    def _apply_preset_to_working(self, name: str) -> None:
-        """套用预设到工作视图（只影响显示；不触发渲染器）。
-
-        V2.5 修复（FR-33.4）：改用 plotstyle.load_preset（先内置、后用户
-        presets.yaml）。原先用 apply_preset 只认内置预设，用户「另存为预设」写进
-        presets.yaml 的名字会 KeyError 被 except 吞掉 → 套用实际失效。
-        """
-        try:
-            from core.render import plotstyle
-            loaded = plotstyle.load_preset(name)
-            if not isinstance(loaded, dict):
-                raise ValueError(f"未知预设：{name}")
-            base = dict(plotstyle.jacs_defaults())
-            base.update(loaded)
-            values = {k: base[k] for k in MAPPED_KEYS if k in base}
-            if values:
-                self.style_panel.set_mapped_values(values)
-                self._mapped_preview_values = dict(values)
-            if loaded.get("cmap"):
-                self.ed_cmap.setText(str(loaded["cmap"]))
-            self._rebuild_working_view()
-        except Exception as err:                       # noqa: BLE001
-            self.logged.emit("WARNING", f"套用预设到工作视图失败：{err}")
-
-    def _on_advanced_style(self) -> None:
-        """「高级…」→ 复用既有出图风格对话框（完整 JACS_SCHEMA）。"""
-        try:
-            from ui.widgets.plot_style_dialog import PlotStyleDialog
-            dlg = PlotStyleDialog(copy.deepcopy(self.cfg), self)
-            try:
-                dlg.exec()
-                vals = dlg.values() if hasattr(dlg, "values") else {}
-            finally:
-                dlg.deleteLater()
-            if isinstance(vals, dict) and vals:
-                picked = {k: vals[k] for k in MAPPED_KEYS if k in vals}
-                if picked:
-                    self.style_panel.set_mapped_values(picked)
-                    self._mapped_preview_values = dict(picked)
-                if vals.get("cmap"):
-                    self.ed_cmap.setText(str(vals["cmap"]))
-                self._rebuild_working_view()
-        except Exception as err:                       # noqa: BLE001
-            self.logged.emit("WARNING", f"高级出图对话框不可用：{err}")
 
     # ══════════════ V2.9.5 FR-73：实时生图预览 ══════════════
     def _schedule_preview(self) -> None:
