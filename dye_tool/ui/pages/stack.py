@@ -21,19 +21,20 @@ import numpy as np
 from typing import Optional
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (QCheckBox, QComboBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QPushButton, QScrollArea, QSplitter, QStackedWidget, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QFormLayout, QGroupBox,
+                               QHeaderView, QLabel, QLineEdit, QPushButton,
+                               QVBoxLayout, QWidget)
 
 from core.io import collect_scans
 from core.pipeline import run_stack
 from ui.pages.workbench import WorkbenchPage
-from ui.widgets.export_bar import ExportBar
-from ui.widgets.file_table import FileTable
-from ui.widgets.live_plot import LivePlotCanvas, label_text
-from ui.widgets.mpl_canvas import CanvasPanel
+from ui.widgets.file_table import (COL_CHECK, COL_DYE, COL_FILE, COL_GROUP, COL_REASON,
+                                   COL_ROLE, COL_STATUS, COL_TIME, FileTable)
+from ui.widgets.live_plot import label_text
 from ui.widgets.style_panel import MAPPED_KEYS, StylePanel
 from ui import theme
 
-#: V2.6 FR-38.3：作图台布局适配基线（参数/文件表最小高度 / 水平 body 左栏 360–470）
+#: 左栏文件表最小高度
 PARAM_TABLE_MIN_H = 140
 
 
@@ -46,7 +47,7 @@ class StackPage(WorkbenchPage):
                 "工作视图可直接交互；定稿图用「生成定稿图」。")
     PRESET_SECTION = "stack"
     PAGE_MARK = "③"
-    BODY_LEFT_MIN_W = 360
+    LEFT_W = 330
 
     def __init__(self, cfg: Optional[dict] = None, parent: Optional[QWidget] = None):
         super().__init__(cfg, parent)
@@ -57,29 +58,12 @@ class StackPage(WorkbenchPage):
 
     def _build(self) -> None:
         self.btn_dir = QPushButton("选择数据目录…")
-        self.btn_run = QPushButton("▶ 生成定稿图")
-        theme.mark(self.btn_run, "primary")
-        self.btn_run.setToolTip(
-            "定稿图由分析流水线生成（run figures/，JACS 版式）。\n"
-            "载入/切换不再自动生图；工作视图与定稿图分离。")
         self.lbl_dir = QLabel("未选择目录")
         theme.mark(self.lbl_dir, "muted")
+        self.lbl_dir.setWordWrap(True)
         self.btn_dir.clicked.connect(self._choose_dir)
-        self.btn_run.clicked.connect(self._run)
-        self.btn_run.setEnabled(False)
-        top = QHBoxLayout()
-        top.addWidget(self.btn_dir)
-        top.addWidget(self.lbl_dir, 1)
-        self.chk_live = QCheckBox("实时生图预览")
-        self.chk_live.setChecked(True)
-        self.chk_live.setToolTip("调整出图参数时用最终渲染器低 dpi 预览；不写正式 run")
-        self.lbl_live = QLabel("预览待命")
-        theme.mark(self.lbl_live, "hint")
-        top.addWidget(self.chk_live)
-        top.addWidget(self.lbl_live)
-        top.addWidget(self.btn_run)
 
-        # ── 选项 ──
+        # ── 数据选项（「载入」步）──
         self.cmb_group = QComboBox()
         self.cmb_group.addItem("全部组")
         self.chk_jacs = QCheckBox("JACS 堆叠图（每组一张）")
@@ -93,13 +77,6 @@ class StackPage(WorkbenchPage):
         self.ed_times.setEnabled(False)
         self.cmb_times.currentIndexChanged.connect(
             lambda i: self.ed_times.setEnabled(i == 1))
-        self.ed_cmap = QLineEdit("viridis")
-        self.chk_probe = QCheckBox("标注探针峰")
-        self.chk_probe.setChecked(True)
-        self.chk_exc = QCheckBox("标注激发波长")
-        self.chk_exc.setChecked(True)
-        self.chk_fluor = QCheckBox("标注荧光团最大吸收")
-        self.chk_fluor.setChecked(True)
         # 用户需求：作图前预处理——与 Φ_Δ 流水线同一 despike 判据；
         # 只影响本次作图/导出，不改原始数据文件，也不是数值分析的一部分。
         self.chk_despike = QCheckBox("去尖峰（作图前预处理，与 Φ_Δ 同判据）")
@@ -108,163 +85,77 @@ class StackPage(WorkbenchPage):
             "作图前按 Φ_Δ 的同一判据（滚动中位数 ± k×MAD）剔除单点异常；\n"
             "只影响本页图件，不修改原始数据文件，也不参与数值分析。\n"
             "取消勾选 = 按原始数据作图（旧行为）。")
-
-        box = QGroupBox("出图选项")
+        box = QGroupBox("画什么")
         f = QFormLayout(box)
         f.addRow("绘制组", self.cmb_group)
-        f.addRow("", self.chk_jacs)
-        f.addRow("", self.chk_overlay)
+        f.addRow(self.chk_jacs)
+        f.addRow(self.chk_overlay)
         f.addRow("叠加图时间点", self.cmb_times)
-        f.addRow("", self.ed_times)
-        f.addRow("色带 (colormap)", self.ed_cmap)
-        f.addRow("", self.chk_probe)
-        f.addRow("", self.chk_exc)
-        f.addRow("", self.chk_fluor)
-        f.addRow("", self.chk_despike)
-        self.cmb_display_preset = QComboBox()
-        self.cmb_display_preset.setToolTip(
-            "套用 presets.yaml 的 stack 节显示预设（只影响本页视图）")
-        self.btn_display_preset_save = QPushButton("保存…")
-        self.btn_display_preset_save.setToolTip("把当前③出图选项存为命名预设（presets.yaml）")
-        self.btn_display_preset_save.clicked.connect(self._save_display_preset_dialog)
-        self.cmb_display_preset.currentIndexChanged.connect(self._on_display_preset_chosen)
-        preset_row = QHBoxLayout()
-        preset_row.addWidget(self.cmb_display_preset, 1)
-        preset_row.addWidget(self.btn_display_preset_save)
-        f.addRow("显示预设", preset_row)
-        self._refresh_display_presets()
+        f.addRow(self.ed_times)
+        f.addRow(self.chk_despike)
 
+        # ── 色带与标注（「样式」步顶部）──
+        self.ed_cmap = QLineEdit("viridis")
+        self.chk_probe = QCheckBox("标注探针峰")
+        self.chk_probe.setChecked(True)
+        self.chk_exc = QCheckBox("标注激发波长")
+        self.chk_exc.setChecked(True)
+        self.chk_fluor = QCheckBox("标注荧光团最大吸收")
+        self.chk_fluor.setChecked(True)
+        box_marks = QGroupBox("色带与标注")
+        fm = QFormLayout(box_marks)
+        fm.addRow("色带 (colormap)", self.ed_cmap)
+        fm.addRow(self.chk_probe)
+        fm.addRow(self.chk_exc)
+        fm.addRow(self.chk_fluor)
+
+        p_load = QWidget()
+        lp = QVBoxLayout(p_load)
+        lp.setContentsMargins(0, 0, 0, 0)
+        lp.addWidget(self.btn_dir)
+        lp.addWidget(self.lbl_dir)
+        hint = QLabel("也可以把数据目录直接拖进来；在①数据页载入的批次切到这里会自动带上。")
+        theme.mark(hint, "hint")
+        hint.setWordWrap(True)
+        lp.addWidget(hint)
+        lp.addWidget(box)
+        lp.addStretch(1)
+
+        # ── 左栏：文件清单（仅用于确认分组与剔除；时间列可改）──
         self.files = FileTable()
-        self.files.table.setMinimumHeight(PARAM_TABLE_MIN_H)   # V2.6 FR-38.3：表格最小高度 120–160
-        box_f = QGroupBox("文件清单（仅用于确认分组与剔除情况）")
-        lf = QVBoxLayout(box_f)
-        lf.addWidget(self.files)
-
-        # V2.6 FR-38.3：左栏参数区改 QScrollArea(widgetResizable) —— 高度不足时**整栏滚动**，
-        # 不再用「固定高度垂直 splitter」把文件清单/底部内容裁掉。
+        self.files.table.setMinimumHeight(PARAM_TABLE_MIN_H)
+        tbl = self.files.table
+        for col in (COL_DYE, COL_ROLE, COL_REASON):      # 窄栏只留关键列；剔除原因在悬停提示里
+            tbl.setColumnHidden(col, True)
+        tbl.setTextElideMode(Qt.ElideMiddle)
+        hdr = tbl.horizontalHeader()
+        for col in (COL_CHECK, COL_TIME, COL_STATUS):
+            hdr.setSectionResizeMode(col, QHeaderView.ResizeToContents)
+        hdr.setSectionResizeMode(COL_FILE, QHeaderView.Stretch)
+        hdr.setSectionResizeMode(COL_GROUP, QHeaderView.Interactive)   # 组名很长：给定宽、可拖
+        hdr.resizeSection(COL_GROUP, 96)
         left = QWidget()
-        self.left_panel = left
-        lv = QVBoxLayout(left)
-        lv.setContentsMargins(0, 0, 0, 0)
-        lv.addWidget(box)
-        lv.addWidget(box_f)
-        lv.addStretch(0)
-        left_scroll = QScrollArea()
-        self.left_scroll = left_scroll
-        left_scroll.setWidget(left)
-        left_scroll.setWidgetResizable(True)
-        left_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        left_scroll.setMinimumWidth(self.BODY_LEFT_MIN_W)
-        left_scroll.setMaximumWidth(self.BODY_LEFT_MAX_W)
-        left = left_scroll
+        ll = QVBoxLayout(left)
+        ll.setContentsMargins(0, 0, 0, 0)
+        ll.setSpacing(4)
+        lbl = QLabel("文件")
+        theme.mark(lbl, "section")
+        ll.addWidget(lbl)
+        ll.addWidget(self.files, 1)
 
-        # V2.5 FR-32/34：工作视图（活画布）与定稿预览分离
-        self.live = LivePlotCanvas(cfg=self.cfg)
-        self.live.readout.connect(self.status)
-        self.canvas = CanvasPanel()
-        from ui.widgets.live_render_preview import LiveRenderPreview
-        self.live_preview = LiveRenderPreview(self, self._render_live_preview)
-        self.live_preview.updated.connect(self.canvas.set_images)
-        self.live_preview.state.connect(self.lbl_live.setText)
-        self.live_preview.failed.connect(lambda m: self.logged.emit("WARNING", f"实时预览失败：{m}"))
-        self.chk_live.toggled.connect(self.live_preview.set_enabled)
-        self.view_stack = QStackedWidget()
-        self.view_stack.addWidget(self.live)            # 0 = 工作视图
-        self.view_stack.addWidget(self.canvas)          # 1 = 定稿预览
-        self.cmb_view = QComboBox()
-        self.cmb_view.addItems(["工作视图", "定稿预览"])
-        self.cmb_view.setToolTip(
-            "工作视图 = 临时交互（缩放/平移/读数/标注/实时样式），\n"
-            "不等于定稿产物；定稿预览只显示已生成图件，不触发生成")
-        self.cmb_view.currentIndexChanged.connect(self._on_view_changed)
-        self.chk_readout = QCheckBox("读数模式")
-        self.chk_readout.setToolTip(
-            "鼠标移动时在状态栏显示最近数据点的物理坐标（不插值；仅本次会话）")
-        self.chk_readout.toggled.connect(self.live.set_readout_enabled)
-        self.cmb_annot = QComboBox()
-        self.cmb_annot.addItem("无标注", "")
-        self.cmb_annot.addItem("文本", "text")
-        self.cmb_annot.addItem("箭头", "arrow")
-        self.cmb_annot.addItem("区域", "rect")
-        self.cmb_annot.setToolTip("标注模式（仅本次会话；随「按当前视图导出」带出，不写入结果目录）")
-        self.cmb_annot.currentIndexChanged.connect(
-            lambda i: self.live.set_annotation_mode(self.cmb_annot.itemData(i)))
-        self.btn_export_view = QPushButton("按当前视图导出…")
-        self.btn_export_view.setToolTip(
-            "把工作视图（含标注）导出为 workspace_stack_<时间>.png/svg；\n"
-            "不进 run 产物、绝不覆盖 fig_*/jacs_*、零 PDF（filter_formats 守）")
-        self.btn_export_view.clicked.connect(self._export_working_view)
-        view_bar = QHBoxLayout()
-        view_bar.addWidget(QLabel("视图"))
-        view_bar.addWidget(self.cmb_view)
-        view_bar.addWidget(self.chk_readout)
-        view_bar.addWidget(self.cmb_annot)
-        view_bar.addStretch(1)
-        view_bar.addWidget(self.btn_export_view)
-        box_fig = QGroupBox("图件视图")
-        lfig = QVBoxLayout(box_fig)
-        lfig.addLayout(view_bar)
-        lfig.addWidget(self.view_stack, 1)
-        box_style = QGroupBox("曲线样式（仅本次会话；「写入出图参数」后才保存）")
-        ls = QVBoxLayout(box_style)
-        self.style_panel = StylePanel()
-        # V2.6 FR-38.3：风格面板自身约 500px 高 → 独立 QScrollArea（必须可滚，不把底部按钮顶出屏幕）
-        style_scroll = QScrollArea()
-        self.style_scroll = style_scroll
-        style_scroll.setWidget(self.style_panel)
-        style_scroll.setWidgetResizable(True)
-        style_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        ls.addWidget(style_scroll, 1)
-        # V2.6 FR-38.3 + Lead 仲裁：动作行做成**固定页脚**（始终可见、不被窗口裁剪），
-        # 滚动区只承载说明/曲线表/可映射键（A38.2 的「写入出图参数」严格初始可见）。
-        self.style_actions = self.style_panel.take_actions_widget()
-        ls.addWidget(self.style_actions, 0)
-        self.style_panel.style_changed.connect(self._on_live_style)
-        self.style_panel.mapped_changed.connect(self._on_mapped_preview)
-        # V2.9.5 FR-73：可映射生图参数/出图选项变化 → 防抖最终渲染器预览
-        for _sig in (self.style_panel.style_changed, self.style_panel.mapped_changed):
-            _sig.connect(lambda *_: self._schedule_preview())
+        self._build_shared()
+        self.btn_run.setToolTip(
+            "定稿图由分析流水线生成（run figures/，JACS 版式）。\n"
+            "载入/切换不再自动生图；工作视图与定稿图分离。")
+        self.chk_live.setToolTip("调整出图参数时用最终渲染器低 dpi 预览；不写正式 run")
+        # V2.9.5 FR-73：出图选项变化 → 防抖最终渲染器预览
         for _w in (self.chk_jacs, self.chk_overlay, self.chk_despike):
             _w.toggled.connect(lambda *_: self._schedule_preview())
         self.cmb_group.currentIndexChanged.connect(lambda *_: self._schedule_preview())
-        self.style_panel.write_requested.connect(self._on_write_plot_params)
-        self.style_panel.preset_requested.connect(self._on_save_plot_preset)
-        self.style_panel.advanced_requested.connect(self._on_advanced_style)
-        # V25-B4：非法颜色/样式被拒绝 → 状态栏 + 日志提示（不崩、不改画布）
-        self.live.style_rejected.connect(self._on_style_rejected)
-        self.style_panel.edit_rejected.connect(self._on_style_rejected)
+        self._assemble(left=left, load_page=p_load, style_top=box_marks)
 
-        # V2.6 FR-38.3：右栏 = 画布 + 实时参数编辑的**垂直 QSplitter**（可拖动/可折叠，画布 stretch 大）
-        right = QSplitter(Qt.Vertical)
-        self.right_split = right
-        right.addWidget(box_fig)
-        right.addWidget(box_style)
-        right.setStretchFactor(0, 1)
-        right.setStretchFactor(1, 0)
-        right.setSizes([560, 300])
-
-        # V2.6 FR-38.3：水平 body splitter —— 左栏初值按页面宽度自适应（360–470），右栏 stretch 1，
-        # 窗口变窄时优先压缩画布。
-        body = QSplitter(Qt.Horizontal)
-        self.body = body
-        body.addWidget(left)
-        body.addWidget(right)
-        body.setStretchFactor(0, 0)
-        body.setStretchFactor(1, 1)
-        body.setSizes([self._body_left_width(), 1200])
-
-        self.export = ExportBar()
-        # V2.3 FR-24.2/24.6：导出条与画布的常规反馈走状态栏（不弹模态）
-        self.export.message.connect(self.status)
-        self.canvas.status_message.connect(self.status)
-        lay = QVBoxLayout(self)
-        lay.addWidget(self.header())
-        self.setToolTip("可把数据目录 / 光谱文件直接拖到这里")
-        lay.addLayout(top)
-        lay.addWidget(body, 1)
-        lay.addWidget(self.progress_row())
-        lay.addWidget(self.export)
         self._sync_from_cfg()
+        self._update_flow()                 # 色带刚按 cfg 刷新：摘要跟着变
         # V25-B3：载入前先用 cfg 播种「可映射键」，避免未编辑就写入默认值
         self._seed_style_panel()
         # V2.5 FR-32：选项变化 → 活画布即时重绘（不触发渲染器）
@@ -277,7 +168,50 @@ class StackPage(WorkbenchPage):
         self.cmb_times.currentIndexChanged.connect(
             lambda *_: self._rebuild_working_view())
 
-    # ══════════════ V2.6 FR-38.3：水平 body splitter 自适应 ══════════════
+    # ══════════════ 流程条摘要 / 结论条 ══════════════
+    def _has_data(self) -> bool:
+        return bool(self._selected_groups())
+
+    def _plot_rows(self) -> list:
+        """当前会画的谱（选中组、未剔除、非背景/暗对照）。"""
+        groups = set(self._selected_groups())
+        return [s for s in (self.scans or []) if not s.excluded
+                and s.role not in ("background", "dark") and s.group in groups]
+
+    def _load_summary(self) -> str:
+        if not self.data_dir:
+            return "还没选数据目录"
+        return f"{self.data_dir.name} · {self.cmb_group.currentText()}"
+
+    def _style_summary(self) -> str:
+        preset = self.cmb_display_preset.currentText()
+        tail = "" if self.cmb_display_preset.currentIndex() <= 0 else f" · 预设 {preset}"
+        return f"色带 {self.ed_cmap.text().strip() or '默认'}{tail}"
+
+    def _update_verdict(self) -> None:
+        rows = self._plot_rows()
+        if not rows:
+            if self.scans:
+                self.verdict.set_failed("没有可画的样品光谱",
+                                        "背景 / 暗对照不计入出图；检查左栏文件的剔除原因")
+            else:
+                self._verdict_empty()
+            return
+        groups = sorted({s.group for s in rows})
+        ts = [float(s.t) for s in rows]
+        kinds = [name for on, name in ((self.chk_jacs.isChecked(), "JACS 堆叠图"),
+                                       (self.chk_overlay.isChecked(), "时间演化叠加图")) if on]
+        lines = [f"工作视图：{' + '.join(kinds) if kinds else '未勾选图类型'}"
+                 + (" · 已去尖峰" if self.chk_despike.isChecked() else "")]
+        final = self._verdict_final_line()
+        if final:
+            lines.append(final)
+        self.verdict.set_verdict(
+            label=self.data_dir.name if self.data_dir else "当前批次",
+            value=f"{len(rows)} 条谱",
+            headline=(f"{len(groups)} 组 · {min(ts):g}–{max(ts):g} s · "
+                      f"按时间着色（{self.ed_cmap.text().strip() or '默认色带'}）"),
+            lines=lines)
 
     # ══════════════ 配置同步 ══════════════
     def _style_section(self) -> tuple[dict, bool]:
@@ -352,7 +286,8 @@ class StackPage(WorkbenchPage):
         if not d:
             return
         self.data_dir = Path(d)
-        self.lbl_dir.setText(f"数据目录：{self.data_dir}")
+        self.lbl_dir.setText(f"数据目录：{self.data_dir.name}")
+        self.lbl_dir.setToolTip(str(self.data_dir))
         self.remember_dir(self.data_dir)
         self._load_overrides = dict(overrides or {})
         cfg = dict(self.cfg)
@@ -381,6 +316,7 @@ class StackPage(WorkbenchPage):
         self._dye_of = dict(ov.get("dye_of") or {})
         self._load_overrides = {}
         self.scans = scans
+        self._final_figs, self._final_stale = [], False      # 新数据：旧定稿图不再对应
         # FR-33.4：重载数据 → per-curve 会话覆写失效（不残留到新一轮数据）
         if hasattr(self, "live"):
             self.live.clear_styles()
@@ -432,6 +368,7 @@ class StackPage(WorkbenchPage):
         scans = self._working_scans()
         if not scans:
             self.live.clear()
+            self._after_working_view()
             return
         from core.render.plotstyle import cmap_colors
         groups = self._selected_groups()
@@ -495,6 +432,7 @@ class StackPage(WorkbenchPage):
         self._sync_style_panel()
         self.cmb_view.setCurrentIndex(0)
         self.view_stack.setCurrentIndex(0)
+        self._after_working_view()
 
     # ── V2.5 FR-33：风格栏桥接（实时=重绘；写入/预设=显式动作） ──
 
@@ -690,6 +628,7 @@ class StackPage(WorkbenchPage):
             self.canvas.set_images(self._final_figs)
             # 生图是显式动作 → 完成后切到「定稿预览」（不触发生成，只是展示产物）
             self.cmb_view.setCurrentIndex(1)
+            self._mark_final(self._final_figs)
         if res.ok:
             self.logged.emit("INFO", f"已生成 {len(res.files)} 个图件文件，"
                                      f"组：{', '.join(res.groups)}")
