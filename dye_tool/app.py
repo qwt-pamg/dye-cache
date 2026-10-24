@@ -303,7 +303,7 @@ def _gui_smoke(argv: list[str]) -> int:
         assert n > 0, "批次工作区没有载入任何文件"
         assert w.goto("analysis"), "导航到 ② 分析 失败"
         assert w.analysis_page.current_key() == "phi", "分析页默认任务应为 Φ_Δ"
-        badge = w.nav.list.item(1).text()
+        badge = w.nav.badge("data")
         assert str(n) in badge, f"导航徽标没更新：{badge!r}"
         return f"{n} 个文件 / 徽标 {badge!r}"
     step("任务流壳（批次载入 + 导航 + 徽标）", _batch_flow)

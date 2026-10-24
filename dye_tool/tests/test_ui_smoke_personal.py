@@ -108,7 +108,8 @@ def test_task_cards_and_shortcuts(qt_app, tmp_path, monkeypatch):
         keys = [k for k, *_ in TASKS]
         assert len(keys) == 7 and keys[0] == "phi" and keys[-1] == "peaks"
         assert "compare" not in keys
-        assert page.list.count() == len(TASKS)
+        assert page.task_picker.keys() == keys
+        assert page.current_key() == "phi" and "单线态氧" in page.btn_task.text()
         shortcuts = {sc.key().toString() for sc in page.findChildren(QShortcut)}
         for i in range(1, len(TASKS) + 1):
             assert f"Ctrl+{i}" in shortcuts, f"缺 Ctrl+{i}"
