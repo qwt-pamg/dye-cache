@@ -6,31 +6,25 @@ import logging
 
 from pathlib import Path
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QAbstractItemView
-from PySide6.QtWidgets import QFormLayout
-from PySide6.QtWidgets import QGroupBox
-from PySide6.QtWidgets import QHBoxLayout
-from PySide6.QtWidgets import QLabel
-from PySide6.QtWidgets import QLineEdit
-from PySide6.QtWidgets import QListWidget
-from PySide6.QtWidgets import QListWidgetItem
-from PySide6.QtWidgets import QPushButton
-from PySide6.QtWidgets import QSplitter
-from PySide6.QtWidgets import QVBoxLayout
-from PySide6.QtWidgets import QWidget
+from PySide6.QtWidgets import (QAbstractItemView, QFormLayout, QGroupBox, QHBoxLayout,
+                               QLabel, QLineEdit, QListWidget, QListWidgetItem,
+                               QPushButton, QSplitter, QVBoxLayout, QWidget)
+from core.analysis import fluorescence_qy
 from core.report.stokes_table import group_from_path
 
 from core.report.stokes_table import row_from_spectra
 from ui import theme
 
-from .common import (_as_float, _finite, _fmt_sig3, _load_optional, _spin,
-                     _empty_char_row)
+from .common import _as_float, _finite, _fmt_sig3, _spin, _empty_char_row
 
 log = logging.getLogger("dye_tool.ui.analysis")
 
 
 class QuantumYieldTab(QWidget):
-    """量子产率 φ 子页：选吸收/发射谱配对 → 相对法 φ → 加入表征总表。"""
+    """量子产率 φ 这一步：中栏 = 吸收/发射谱列表 + 读数；检查器 = 测量条件与参比。
+
+    本控件自身是中栏内容；:attr:`settings` 是检查器页，:attr:`primary_actions` 是检查器主按钮。
+    """
 
     def __init__(self, panel) -> None:
         super().__init__()
@@ -44,27 +38,38 @@ class QuantumYieldTab(QWidget):
         self._build()
 
     def _build(self) -> None:
-        lay = QVBoxLayout(self)
-        lay.setContentsMargins(8, 8, 8, 8)
-        bar = QHBoxLayout()
-        self.btn_phi_dir = QPushButton("选择光谱目录…")
-        self.lbl_phi_dir = QLabel("未选择目录")
-        theme.mark(self.lbl_phi_dir, "muted")
-        bar.addWidget(self.btn_phi_dir)
-        bar.addWidget(self.lbl_phi_dir, 1)
-        lay.addLayout(bar)
-        hint = QLabel("相对法：φ = φ_ref × (I/I_ref) × (A_ref/A) × (n²/n_ref²)；"
-                      "I = 发射谱积分强度，A = λex 处吸光度（建议 A ≤ 0.05）。"
-                      "数值全部复用 core.analysis.fluorescence_qy，不重写公式。")
-        hint.setWordWrap(True)
-        theme.mark(hint, "hint")
-        lay.addWidget(hint)
+        self._build_center()
+        self._build_settings()
+        self.btn_compute_phi = QPushButton("重新计算")
+        self.btn_compute_phi.setToolTip("选择和参数一改就会自动重算；这里可以手动再算一次")
+        self.btn_add_phi = QPushButton("加入表征表")
+        theme.mark(self.btn_add_phi, "primary")
+        self.btn_add_phi.setEnabled(False)
+        self.primary_actions = QWidget()
+        row = QHBoxLayout(self.primary_actions)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.addWidget(self.btn_add_phi, 1)
+        row.addWidget(self.btn_compute_phi)
 
+        self.btn_phi_dir.clicked.connect(self._choose_phi_dir)
+        self.btn_compute_phi.clicked.connect(lambda *_: self.compute_phi())
+        self.btn_add_phi.clicked.connect(lambda *_: self.add_phi_to_table())
+        self.btn_eps_from.clicked.connect(lambda *_: self._on_eps_from_result())
+        for lst in (self.lst_phi_abs, self.lst_phi_em):
+            lst.currentRowChanged.connect(lambda *_: self._phi_preview())
+        for sp in (self.sp_lam_ex, self.sp_phi_ref, self.sp_i_ref,
+                   self.sp_a_ref, self.sp_n_ref, self.sp_n, self.sp_eps):
+            sp.valueChanged.connect(lambda *_: self._phi_preview())
+        self.ed_comp_phi.textChanged.connect(lambda *_: self.panel.refresh())
+
+    def _build_center(self) -> None:
+        """中栏：左右两张谱列表（各单选一支）+ 读数行与提示。"""
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
         split = QSplitter(Qt.Horizontal)
         self.lst_phi_abs = QListWidget()
         self.lst_phi_em = QListWidget()
-        for lst, title in ((self.lst_phi_abs, "吸收谱（kind=abs）"),
-                           (self.lst_phi_em, "发射谱（kind=em）")):
+        for lst, title in ((self.lst_phi_abs, "吸收谱"), (self.lst_phi_em, "发射谱")):
             lst.setSelectionMode(QAbstractItemView.SingleSelection)
             lst.setAlternatingRowColors(True)
             box = QGroupBox(title)
@@ -72,10 +77,48 @@ class QuantumYieldTab(QWidget):
             vb.addWidget(lst)
             split.addWidget(box)
         split.setSizes([380, 380])
-        lay.addWidget(split, 2)
+        lay.addWidget(split, 1)
 
-        box = QGroupBox("测量条件与参比")
-        form = QFormLayout(box)
+        box = QGroupBox("读数")
+        lr = QVBoxLayout(box)
+        preview = QHBoxLayout()
+        self.lbl_phi_a = QLabel("A(λex) = —")
+        self.lbl_phi_i = QLabel("I = —")
+        self.lbl_phi = QLabel("φ = —")
+        self.lbl_brightness = QLabel("亮度 = —")
+        for lb in (self.lbl_phi_a, self.lbl_phi_i, self.lbl_phi, self.lbl_brightness):
+            theme.mark(lb, "strong")
+            preview.addWidget(lb)
+        preview.addStretch(1)
+        lr.addLayout(preview)
+        self.lbl_phi_warn = QLabel("")
+        self.lbl_phi_warn.setWordWrap(True)
+        theme.mark(self.lbl_phi_warn, "warnHint")
+        lr.addWidget(self.lbl_phi_warn)
+        self.lbl_phi_msg = QLabel("未选择配对：请在左右列表各选一支谱")
+        self.lbl_phi_msg.setWordWrap(True)
+        theme.mark(self.lbl_phi_msg, "muted")
+        lr.addWidget(self.lbl_phi_msg)
+        lay.addWidget(box)
+
+    def _build_settings(self) -> None:
+        """检查器页：光谱目录 + 测量条件与参比 + 入表用的条件/化合物。"""
+        self.settings = QWidget()
+        lay = QVBoxLayout(self.settings)
+        lay.setContentsMargins(0, 0, 0, 0)
+        self.btn_phi_dir = QPushButton("选择光谱目录…")
+        self.lbl_phi_dir = QLabel("未选择目录")
+        theme.mark(self.lbl_phi_dir, "muted")
+        self.lbl_phi_dir.setWordWrap(True)
+        lay.addWidget(self.btn_phi_dir, 0, Qt.AlignLeft)
+        lay.addWidget(self.lbl_phi_dir)
+        hint = QLabel("相对法：φ = φ_ref × (I/I_ref) × (A_ref/A) × (n²/n_ref²)。"
+                      "I 是发射谱积分强度，A 是 λex 处的吸光度（建议 A ≤ 0.05）。")
+        hint.setWordWrap(True)
+        theme.mark(hint, "hint")
+        lay.addWidget(hint)
+
+        form = QFormLayout()
         self.sp_lam_ex = _spin(200.0, 1200.0, 450.0, 1.0, 1, " nm")
         self.sp_phi_ref = _spin(0.0, 5.0, 0.54, 0.01, 4)
         self.sp_i_ref = _spin(0.0, 1.0e12, 1.0, 0.1, 6)
@@ -84,13 +127,18 @@ class QuantumYieldTab(QWidget):
         self.sp_n = _spin(1.0, 2.0, 1.36, 0.01, 3)
         self.sp_eps = _spin(0.0, 1.0e12, 0.0, 1000.0, 3)
         self.btn_eps_from = QPushButton("从 ε 结果填入")
-        self.btn_eps_from.setToolTip("从②分析页「摩尔消光系数 ε」卡最近一次成功结果取 ε")
+        self.btn_eps_from.setToolTip("取「摩尔消光系数 ε」任务最近一次成功的结果")
         self.lbl_eps_source = QLabel("ε 来源：手填")
         theme.mark(self.lbl_eps_source, "hint")
+        self.lbl_eps_source.setWordWrap(True)
+        # 量程很大的数值框按量程撑宽，窄栏里放不下 → 统一给个小的最小宽度
+        for sp in (self.sp_lam_ex, self.sp_phi_ref, self.sp_i_ref, self.sp_a_ref,
+                   self.sp_n_ref, self.sp_n, self.sp_eps):
+            sp.setMinimumWidth(80)
         eps_row = QHBoxLayout()
-        eps_row.addWidget(self.sp_eps, 1)
+        eps_row.setContentsMargins(0, 0, 0, 0)
         eps_row.addWidget(self.btn_eps_from)
-        eps_row.addWidget(self.lbl_eps_source)
+        eps_row.addWidget(self.lbl_eps_source, 1)
         eps_wrap = QWidget()
         eps_wrap.setLayout(eps_row)
         self.ed_cond_phi = QLineEdit()
@@ -98,9 +146,7 @@ class QuantumYieldTab(QWidget):
         self.ed_comp_phi = QLineEdit()
         self.ed_comp_phi.setPlaceholderText("默认取吸收文件名组别；可手改")
         form.addRow("激发波长 λex", self.sp_lam_ex)
-        self.lbl_lam_note = QLabel(
-            "λex 只需落在吸收谱范围；发射积分取发射谱自身范围"
-            "（仪器 EM 扫描可从 λex 之后开始，V2.6 修正）")
+        self.lbl_lam_note = QLabel("λex 只需落在吸收谱范围内；发射积分取发射谱自己的范围")
         theme.mark(self.lbl_lam_note, "hint")
         self.lbl_lam_note.setWordWrap(True)
         form.addRow("", self.lbl_lam_note)
@@ -119,47 +165,12 @@ class QuantumYieldTab(QWidget):
         form.addRow("参比 A_ref", self.sp_a_ref)
         form.addRow("参比折射率 n_ref", self.sp_n_ref)
         form.addRow("样品折射率 n", self.sp_n)
-        form.addRow("ε (M⁻¹cm⁻¹)", eps_wrap)
+        form.addRow("ε (M⁻¹cm⁻¹)", self.sp_eps)
+        form.addRow("", eps_wrap)
         form.addRow("条件/溶剂", self.ed_cond_phi)
         form.addRow("化合物/组别", self.ed_comp_phi)
-        lay.addWidget(box)
-
-        preview = QHBoxLayout()
-        self.lbl_phi_a = QLabel("A(λex) = —")
-        self.lbl_phi_i = QLabel("I = —")
-        self.lbl_phi = QLabel("φ = —")
-        self.lbl_brightness = QLabel("亮度 = —")
-        for lb in (self.lbl_phi_a, self.lbl_phi_i, self.lbl_phi, self.lbl_brightness):
-            theme.mark(lb, "strong")
-            preview.addWidget(lb)
-        preview.addStretch(1)
-        lay.addLayout(preview)
-        self.lbl_phi_warn = QLabel("")
-        self.lbl_phi_warn.setWordWrap(True)
-        theme.mark(self.lbl_phi_warn, "warnHint")
-        lay.addWidget(self.lbl_phi_warn)
-        self.lbl_phi_msg = QLabel("未选择配对：请在左右列表各选一支谱")
-        self.lbl_phi_msg.setWordWrap(True)
-        theme.mark(self.lbl_phi_msg, "muted")
-        lay.addWidget(self.lbl_phi_msg)
-        row = QHBoxLayout()
-        self.btn_compute_phi = QPushButton("计算 φ")
-        self.btn_add_phi = QPushButton("加入表征表")
-        self.btn_add_phi.setEnabled(False)
-        row.addWidget(self.btn_compute_phi)
-        row.addWidget(self.btn_add_phi)
-        row.addStretch(1)
-        lay.addLayout(row)
-
-        self.btn_phi_dir.clicked.connect(self._choose_phi_dir)
-        self.btn_compute_phi.clicked.connect(lambda *_: self.compute_phi())
-        self.btn_add_phi.clicked.connect(lambda *_: self.add_phi_to_table())
-        self.btn_eps_from.clicked.connect(lambda *_: self._on_eps_from_result())
-        for lst in (self.lst_phi_abs, self.lst_phi_em):
-            lst.currentRowChanged.connect(lambda *_: self._phi_preview())
-        for sp in (self.sp_lam_ex, self.sp_phi_ref, self.sp_i_ref,
-                   self.sp_a_ref, self.sp_n_ref, self.sp_n, self.sp_eps):
-            sp.valueChanged.connect(lambda *_: self._phi_preview())
+        lay.addLayout(form)
+        lay.addStretch(1)
 
     def _choose_phi_dir(self) -> None:
         d = self.panel.pick_dir("选择光谱目录（φ）")
@@ -251,7 +262,13 @@ class QuantumYieldTab(QWidget):
         return a, e
 
     def _phi_preview(self) -> dict:
-        """即时刷新 A/I/φ/亮度预览（计算口径全部来自 fluorescence_qy）。"""
+        """即时刷新 A/I/φ/亮度预览（计算口径全部来自 fluorescence_qy），再刷新结论条。"""
+        try:
+            return self._compute_preview()
+        finally:
+            self.panel.refresh()
+
+    def _compute_preview(self) -> dict:
         self._last_phi = {}
         a, e = self._phi_selected()
         self.btn_add_phi.setEnabled(False)
@@ -264,15 +281,7 @@ class QuantumYieldTab(QWidget):
             self.lbl_phi_msg.setText("未选择配对：请在左右列表各选一支吸收谱与发射谱")
             return {}
         try:
-            qy = _load_optional("core.analysis.fluorescence_qy")
-        except Exception:                              # noqa: BLE001 —— G-A 未落地
-            self.lbl_phi_msg.setText(
-                "核心模块 core.analysis.fluorescence_qy 尚未落地：φ 暂不可算"
-                "（候选与参数已就绪，落地后自动可用）")
-            self.lbl_phi_warn.setText("")
-            return {}
-        try:
-            res = qy.compute_fluorescence_qy(
+            res = fluorescence_qy.compute_fluorescence_qy(
                 a, e, lam_ex=float(self.sp_lam_ex.value()),
                 i_ref=float(self.sp_i_ref.value()),
                 a_ref=float(self.sp_a_ref.value()),
@@ -305,19 +314,12 @@ class QuantumYieldTab(QWidget):
                                if _finite(i_em) else "I = —")
         display = res.get("phi_display") or _fmt_sig3(phi)
         self.lbl_phi.setText(f"φ = {display}")
-        eps = float(self.sp_eps.value())
-        br = float("nan")
-        if eps > 0 and _finite(phi):
-            try:
-                qy = _load_optional("core.analysis.fluorescence_qy")
-                br = float(qy.brightness(eps, phi))
-            except Exception:                          # noqa: BLE001 —— 退化为同义乘法
-                br = eps * float(phi)
+        br = self.brightness(phi)
         self.lbl_brightness.setText(
             f"亮度 = {br:.4g} M⁻¹cm⁻¹" if _finite(br) else "亮度 = —（请填 ε）")
         warnings = [str(w) for w in (res.get("warnings") or [])]
         self.lbl_phi_warn.setText("；".join(warnings))
-        self.lbl_phi_msg.setText("可「加入表征表」（不自动入表；ε 来源见上方）")
+        self.lbl_phi_msg.setText("可以「加入表征表」了（不会自动入表）")
         self.btn_add_phi.setEnabled(True)
 
     def _on_eps_from_result(self) -> None:
@@ -366,13 +368,7 @@ class QuantumYieldTab(QWidget):
             group = group_from_path(getattr(a, "path", ""), self.panel.cfg)
         eps = float(self.sp_eps.value())
         phi = res.get("phi")
-        br = float("nan")
-        if eps > 0 and _finite(phi):
-            try:
-                br = float(_load_optional(
-                    "core.analysis.fluorescence_qy").brightness(eps, phi))
-            except Exception:                          # noqa: BLE001
-                br = eps * float(phi)
+        br = self.brightness(phi)
         row = _empty_char_row()
         row.update({
             "condition": self.ed_cond_phi.text().strip(),
@@ -387,5 +383,53 @@ class QuantumYieldTab(QWidget):
             "note": "；".join([str(w) for w in (res.get("warnings") or [])]),
         })
         self.panel.add_row(row)
-        self.panel.tabs.setCurrentWidget(self.panel.tab_char)
+        self.panel.show_char_table()
         return True
+
+    # ── 工作台：亮度 / 摘要 / 结论条 ──
+    def brightness(self, phi) -> float:
+        """亮度 = ε × φ；ε 没填（≤ 0）时为 NaN。"""
+        eps = float(self.sp_eps.value())
+        return float(fluorescence_qy.brightness(eps, phi)) if eps > 0 else float("nan")
+
+    def has_result(self) -> bool:
+        return bool(self._last_phi.get("ok"))
+
+    def summary(self) -> str:
+        """检查器里这一步折叠后的一行摘要。"""
+        if not self._phi_spectra:
+            return "还没选光谱目录"
+        if self.has_result():
+            phi = self._last_phi.get("phi")
+            text = f"φ = {self._last_phi.get('phi_display') or _fmt_sig3(phi)}"
+            br = self.brightness(phi)
+            return text + (f" · 亮度 {br:.3g}" if _finite(br) else "")
+        a, e = self._phi_selected()
+        return "还没选齐一对谱" if a is None or e is None else "这一对算不出 φ"
+
+    def fill_verdict(self, card) -> None:
+        """结论条：大数 = φ，一句话 = 亮度，说明行 = A、I 与提醒。"""
+        a, e = self._phi_selected()
+        if a is None or e is None:
+            card.set_empty("还没选好一对谱",
+                           "在中间各选一支吸收谱和发射谱，φ 即时算出" if self._phi_spectra
+                           else "先在右侧选光谱目录，再各选一支吸收谱和发射谱")
+            return
+        res = self._last_phi
+        if not res.get("ok"):
+            card.set_failed("这一对算不出 φ",
+                            str(res.get("error") or res.get("reason") or "无法计算"))
+            return
+        phi = res.get("phi")
+        br = self.brightness(phi)
+        name = self.ed_comp_phi.text().strip() or group_from_path(
+            getattr(a, "path", ""), self.panel.cfg)
+        headline = (f"亮度 ε×φ = {br:.4g} M⁻¹cm⁻¹" if _finite(br)
+                    else "φ 已算出；填上 ε 就能得到亮度")
+        lines = [f"A(λex) = {_as_float(res.get('a_ex')):.4f} · "
+                 f"I = {_as_float(res.get('i_em')):.4g}",
+                 f"{Path(str(a.path)).name} × {Path(str(e.path)).name}"]
+        lines += [str(w) for w in (res.get("warnings") or [])]
+        card.set_verdict(label=f"荧光量子产率 φ · {name}",
+                         value=str(res.get("phi_display") or _fmt_sig3(phi)),
+                         headline=headline, lines=lines[:3])

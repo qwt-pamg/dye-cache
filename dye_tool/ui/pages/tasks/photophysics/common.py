@@ -2,21 +2,13 @@
 """光物理表征卡三个子页共用的常量与小工具（表征总表列、数值格式、输出路径）。"""
 from __future__ import annotations
 
-
-import importlib
 import math
 from pathlib import Path
 from PySide6.QtWidgets import QDoubleSpinBox
 from core.paths import resolve_out_root
 
 
-_CHAR_COLUMNS_FALLBACK = (
-    "条件/溶剂", "化合物/组别", "吸收谱文件", "发射谱文件",
-    "λabs(nm)", "λem(nm)", "Δλ(nm)", "Δν̃(cm⁻¹)",
-    "ε(M⁻¹cm⁻¹)", "φ", "brightness(M⁻¹cm⁻¹)",
-    "k_photo(min⁻¹)", "t½(min)", "备注",
-)
-#: 表列 → 行字段键（与 characterization.CharacterizationRow 同键，FR-44 原序）
+#: 表列 → 行字段键（与 characterization.CHARACTERIZATION_COLUMNS 同序、CharacterizationRow 同键）
 _CHAR_KEYS = ("condition", "compound", "abs_file", "em_file",
               "lam_abs", "lam_em", "delta_lambda", "delta_wavenumber",
               "epsilon", "phi", "brightness", "k_photo", "t_half", "note")
@@ -52,11 +44,6 @@ def _fmt_num(value, spec: str) -> str:
 
 def _fmt_sig3(value) -> str:
     return "—" if not _finite(value) else f"{float(value):.3g}"
-
-
-def _load_optional(dotted: str):
-    """可选依赖懒导入（G-A 核心模块尚未落地时不阻塞 UI 构建）。"""
-    return importlib.import_module(dotted)
 
 
 def _spin(lo: float, hi: float, val: float, step: float = 1.0,

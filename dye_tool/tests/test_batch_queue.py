@@ -216,6 +216,12 @@ def test_queue_task_card_and_ctrl5(qt_app, tmp_path, monkeypatch):
         _destroy(qt_app, page)
 
 
+def _status_column(panel) -> list:
+    from ui.pages.tasks.queue import COL_STATUS
+    return [panel.tbl_queue.item(r, COL_STATUS).text()
+            for r in range(panel.tbl_queue.rowCount())]
+
+
 @pytest.mark.slow
 def test_queue_add_remove_clear(qt_app, tmp_path):
     from ui.pages.tasks.queue import BatchQueuePanel
@@ -226,10 +232,10 @@ def test_queue_add_remove_clear(qt_app, tmp_path):
         d1.mkdir()
         d2.mkdir()
         assert panel.add_directories([d1, d2]) == 2
-        assert panel.list_dirs.count() == 2
+        assert panel.tbl_queue.rowCount() == 2
         assert panel.btn_start.isEnabled()
         assert panel.add_directories([d1]) == 0          # 去重
-        panel.list_dirs.item(0).setSelected(True)
+        panel.tbl_queue.selectRow(0)
         panel._remove_selected()
         assert len(panel.dirs) == 1
         panel.clear_dirs()
@@ -261,7 +267,8 @@ def test_queue_run_serial_status_and_summary(qt_app, tmp_path, monkeypatch):
         assert panel.job is not None and panel.job.wait(15000)
         _pump(qt_app, 40)
         assert calls == [d1, d2]                          # 串行、顺序一致
-        assert panel.list_status.count() == 2
+        assert _status_column(panel) == ["完成", "完成"]
+        assert panel.verdict.headline_text() == "2 个目录 · 2 成功 · 0 失败"
         assert panel._last_summary and Path(panel._last_summary).is_file()
         assert panel.btn_open_file.isEnabled()
         from openpyxl import load_workbook
@@ -297,7 +304,7 @@ def test_queue_cancel_at_directory_boundary(qt_app, tmp_path, monkeypatch):
         _pump(qt_app, 40)
         statuses = [e.get("status") for e in panel._last_entries]
         assert statuses == ["ok", "cancelled", "cancelled"]
-        assert panel.list_status.count() == 3
+        assert _status_column(panel) == ["完成", "取消", "取消"]
         assert panel._last_summary and Path(panel._last_summary).is_file()
     finally:
         _destroy(qt_app, panel)

@@ -6,29 +6,29 @@ import logging
 
 import math
 from pathlib import Path
-from PySide6.QtWidgets import QCheckBox
-from PySide6.QtWidgets import QComboBox
-from PySide6.QtWidgets import QFileDialog
-from PySide6.QtWidgets import QGroupBox
-from PySide6.QtWidgets import QHBoxLayout
-from PySide6.QtWidgets import QLabel
-from PySide6.QtWidgets import QLineEdit
-from PySide6.QtWidgets import QPushButton
-from PySide6.QtWidgets import QVBoxLayout
-from PySide6.QtWidgets import QWidget
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QFileDialog, QFormLayout, QGroupBox,
+                               QHBoxLayout, QLabel, QLineEdit, QPushButton, QVBoxLayout,
+                               QWidget)
+from core.analysis import photobleach
+from core.inputs.io import parse_filename
 from core.paths import app_root
+from core.render import photophysics
+from ui.widgets.batch_tree import GROUP_COLORS
 from ui.widgets.live_plot import LivePlotCanvas
 
 from ui import theme
 
-from .common import (_BLEACH_UNITS, _as_float, _finite, _load_optional, _empty_char_row,
-                     photo_out_path)
+from .common import _BLEACH_UNITS, _as_float, _finite, _empty_char_row, photo_out_path
 
 log = logging.getLogger("dye_tool.ui.analysis")
 
 
 class PhotobleachTab(QWidget):
-    """光漂白子页：载入时间序列 → 单指数拟合 → 出图 / 加入表征总表。"""
+    """光漂白这一步：中栏 = 衰减曲线 + 读数 + 导出；检查器 = 数据来源与拟合选项。
+
+    本控件自身是中栏内容；:attr:`settings` 是检查器页，:attr:`primary_actions` 是检查器主按钮。
+    """
 
     def __init__(self, panel) -> None:
         super().__init__()
@@ -40,108 +40,22 @@ class PhotobleachTab(QWidget):
         self._bleach_label = ""
         self._last_bleach: dict = {}
         self._bleach_runs: list = []
+        #: 拟合之后又换了数据或选项 → 流程条标「需要重算」
+        self._stale = False
         self._build()
 
     def _build(self) -> None:
-        lay = QVBoxLayout(self)
-        lay.setContentsMargins(8, 8, 8, 8)
-        hint = QLabel("单指数衰减 I(t)=I∞+(I0−I∞)·e^(−k·t)；可关平台项退化为 I0·e^(−k·t)。"
-                      "时间统一换算为分钟；k/t½/loss%/R² 复用 core.analysis.photobleach。")
-        hint.setWordWrap(True)
-        theme.mark(hint, "hint")
-        lay.addWidget(hint)
-
-        src_row = QHBoxLayout()
-        src_row.addWidget(QLabel("输入模式"))
-        self.cmb_bleach_src = QComboBox()
-        self.cmb_bleach_src.addItem("① 时间序列谱目录", "series")
-        self.cmb_bleach_src.addItem("② 两列 CSV（时间,强度）", "csv")
-        src_row.addWidget(self.cmb_bleach_src)
-        src_row.addStretch(1)
-        lay.addLayout(src_row)
-
-        self.box_series = QGroupBox("时间序列谱目录")
-        sl = QHBoxLayout(self.box_series)
-        self.btn_bleach_dir = QPushButton("选择谱目录…")
-        self.lbl_bleach_dir = QLabel("未选择目录")
-        self.cmb_bleach_value = QComboBox()
-        self.cmb_bleach_value.addItem("峰值吸光度", "peak_abs")
-        self.cmb_bleach_value.addItem("积分强度", "integral")
-        sl.addWidget(self.btn_bleach_dir)
-        sl.addWidget(self.lbl_bleach_dir, 1)
-        sl.addWidget(QLabel("取值"))
-        sl.addWidget(self.cmb_bleach_value)
-        lay.addWidget(self.box_series)
-
-        self.box_csv = QGroupBox("两列 CSV（时间,强度；外部成像 ROI 导出）")
-        cl = QHBoxLayout(self.box_csv)
-        self.btn_bleach_csv = QPushButton("选择 CSV…")
-        self.lbl_bleach_csv = QLabel("未选择文件")
-        cl.addWidget(self.btn_bleach_csv)
-        cl.addWidget(self.lbl_bleach_csv, 1)
-        lay.addWidget(self.box_csv)
-
-        opt = QHBoxLayout()
-        self.chk_plateau = QCheckBox("含平台项 I∞")
-        self.chk_plateau.setChecked(True)
-        self.chk_norm = QCheckBox("归一化对比")
-        self.chk_norm.setChecked(True)
-        self.cmb_unit = QComboBox()
-        for unit, label in _BLEACH_UNITS:
-            self.cmb_unit.addItem(label, unit)
-        opt.addWidget(self.chk_plateau)
-        opt.addWidget(self.chk_norm)
-        opt.addWidget(QLabel("输入时间单位"))
-        opt.addWidget(self.cmb_unit)
-        opt.addStretch(1)
-        lay.addLayout(opt)
-
-        ident = QHBoxLayout()
-        self.ed_cond_bleach = QLineEdit()
-        self.ed_cond_bleach.setPlaceholderText("条件/溶剂（入表用；缺项留空）")
-        self.ed_comp_bleach = QLineEdit()
-        self.ed_comp_bleach.setPlaceholderText("化合物/组别（默认取目录/文件名）")
-        ident.addWidget(QLabel("条件/溶剂"))
-        ident.addWidget(self.ed_cond_bleach, 1)
-        ident.addWidget(QLabel("化合物/组别"))
-        ident.addWidget(self.ed_comp_bleach, 1)
-        lay.addLayout(ident)
-
-        preview = QHBoxLayout()
-        self.lbl_bleach_k = QLabel("k = —")
-        self.lbl_bleach_thalf = QLabel("t½ = —")
-        self.lbl_bleach_loss = QLabel("loss = —")
-        self.lbl_bleach_r2 = QLabel("R² = —")
-        for lb in (self.lbl_bleach_k, self.lbl_bleach_thalf,
-                   self.lbl_bleach_loss, self.lbl_bleach_r2):
-            theme.mark(lb, "strong")
-            preview.addWidget(lb)
-        preview.addStretch(1)
-        lay.addLayout(preview)
-        self.lbl_bleach_msg = QLabel("请先载入时间序列谱目录或两列 CSV")
-        self.lbl_bleach_msg.setWordWrap(True)
-        theme.mark(self.lbl_bleach_msg, "muted")
-        lay.addWidget(self.lbl_bleach_msg)
-
-        row = QHBoxLayout()
+        self._build_center()
+        self._build_settings()
         self.btn_fit_bleach = QPushButton("拟合 / 预览")
+        theme.mark(self.btn_fit_bleach, "primary")
         self.btn_add_bleach = QPushButton("加入表征表")
         self.btn_add_bleach.setEnabled(False)
-        self.btn_export_decay = QPushButton("导出衰减图…")
-        self.btn_export_decay.setToolTip(
-            "用 core/render/photophysics 的新图型出口（未落地时提示暂不可用）")
-        self.btn_export_evolution = QPushButton("导出光谱演化图…")
-        self.btn_export_evolution.setToolTip(
-            "时间序列谱 → 光谱演化图（时间序蓝系渐变 + 首末包络 + t=0 高亮）")
-        row.addWidget(self.btn_fit_bleach)
+        self.primary_actions = QWidget()
+        row = QHBoxLayout(self.primary_actions)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.addWidget(self.btn_fit_bleach, 1)
         row.addWidget(self.btn_add_bleach)
-        row.addWidget(self.btn_export_decay)
-        row.addWidget(self.btn_export_evolution)
-        row.addStretch(1)
-        lay.addLayout(row)
-
-        self.bleach_plot = LivePlotCanvas(figsize=(6.0, 3.0), dpi=90)
-        lay.addWidget(self.bleach_plot, 3)
 
         self.btn_bleach_dir.clicked.connect(self._choose_bleach_dir)
         self.btn_bleach_csv.clicked.connect(self._choose_bleach_csv)
@@ -153,7 +67,125 @@ class PhotobleachTab(QWidget):
         self.cmb_bleach_src.currentIndexChanged.connect(self._on_bleach_src_changed)
         self.cmb_bleach_value.currentIndexChanged.connect(
             lambda *_: self._reload_bleach_series())
+        self.chk_plateau.toggled.connect(lambda *_: self._mark_stale())
+        self.chk_norm.toggled.connect(self._on_norm_toggled)
+        self.cmb_unit.currentIndexChanged.connect(lambda *_: self._mark_stale())
+        self.ed_comp_bleach.textChanged.connect(lambda *_: self.panel.refresh())
         self._on_bleach_src_changed()
+
+    def _build_center(self) -> None:
+        """中栏：衰减曲线（大）+ k / t½ / loss / R² 读数 + 两个图件导出。"""
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        self.bleach_plot = LivePlotCanvas(figsize=(6.0, 3.0), dpi=90)
+        self.bleach_plot.lbl_hint.setText("工作视图：可缩放、读数；投稿用图请点下方「导出衰减图」")
+        box_plot = QGroupBox("衰减曲线")
+        lp = QVBoxLayout(box_plot)
+        lp.addWidget(self.bleach_plot)
+        lay.addWidget(box_plot, 1)
+
+        box = QGroupBox("拟合结果")
+        lr = QVBoxLayout(box)
+        preview = QHBoxLayout()
+        self.lbl_bleach_k = QLabel("k = —")
+        self.lbl_bleach_thalf = QLabel("t½ = —")
+        self.lbl_bleach_loss = QLabel("loss = —")
+        self.lbl_bleach_r2 = QLabel("R² = —")
+        for lb in (self.lbl_bleach_k, self.lbl_bleach_thalf,
+                   self.lbl_bleach_loss, self.lbl_bleach_r2):
+            theme.mark(lb, "strong")
+            preview.addWidget(lb)
+        preview.addStretch(1)
+        self.btn_export_decay = QPushButton("导出衰减图…")
+        self.btn_export_decay.setToolTip("把数据点和拟合曲线画成投稿图，存到输出目录")
+        self.btn_export_evolution = QPushButton("导出光谱演化图…")
+        self.btn_export_evolution.setToolTip(
+            "时间序列谱 → 光谱演化图（按时间由浅到深的蓝色 + 首末两条包络 + t=0 高亮）")
+        preview.addWidget(self.btn_export_decay)
+        preview.addWidget(self.btn_export_evolution)
+        lr.addLayout(preview)
+        self.lbl_bleach_msg = QLabel("请先载入时间序列谱目录或两列 CSV")
+        self.lbl_bleach_msg.setWordWrap(True)
+        theme.mark(self.lbl_bleach_msg, "muted")
+        lr.addWidget(self.lbl_bleach_msg)
+        lay.addWidget(box)
+
+    def _build_settings(self) -> None:
+        """检查器页：输入模式 + 来源（谱目录或 CSV）+ 拟合选项 + 入表用的条件/化合物。"""
+        self.settings = QWidget()
+        lay = QVBoxLayout(self.settings)
+        lay.setContentsMargins(0, 0, 0, 0)
+        hint = QLabel("单指数衰减 I(t) = I∞ + (I0 − I∞)·e^(−k·t)；不含平台项时为 I0·e^(−k·t)。"
+                      "时间统一换算成分钟。")
+        hint.setWordWrap(True)
+        theme.mark(hint, "hint")
+        lay.addWidget(hint)
+
+        src_row = QHBoxLayout()
+        src_row.addWidget(QLabel("输入模式"))
+        self.cmb_bleach_src = QComboBox()
+        self.cmb_bleach_src.addItem("时间序列谱目录", "series")
+        self.cmb_bleach_src.addItem("两列 CSV（时间,强度）", "csv")
+        src_row.addWidget(self.cmb_bleach_src, 1)
+        lay.addLayout(src_row)
+
+        self.box_series = QGroupBox("时间序列谱目录")
+        sl = QVBoxLayout(self.box_series)
+        self.btn_bleach_dir = QPushButton("选择谱目录…")
+        self.lbl_bleach_dir = QLabel("未选择目录")
+        self.lbl_bleach_dir.setWordWrap(True)
+        theme.mark(self.lbl_bleach_dir, "muted")
+        self.cmb_bleach_value = QComboBox()
+        self.cmb_bleach_value.addItem("峰值吸光度", "peak_abs")
+        self.cmb_bleach_value.addItem("积分强度", "integral")
+        sl.addWidget(self.btn_bleach_dir, 0, Qt.AlignLeft)
+        sl.addWidget(self.lbl_bleach_dir)
+        val_row = QHBoxLayout()
+        val_row.addWidget(QLabel("取值"))
+        val_row.addWidget(self.cmb_bleach_value, 1)
+        sl.addLayout(val_row)
+        lay.addWidget(self.box_series)
+
+        self.box_csv = QGroupBox("两列 CSV（时间,强度；如成像 ROI 导出）")
+        cl = QVBoxLayout(self.box_csv)
+        self.btn_bleach_csv = QPushButton("选择 CSV…")
+        self.lbl_bleach_csv = QLabel("未选择文件")
+        self.lbl_bleach_csv.setWordWrap(True)
+        theme.mark(self.lbl_bleach_csv, "muted")
+        cl.addWidget(self.btn_bleach_csv, 0, Qt.AlignLeft)
+        cl.addWidget(self.lbl_bleach_csv)
+        lay.addWidget(self.box_csv)
+
+        form = QFormLayout()
+        self.chk_plateau = QCheckBox("含平台项 I∞")
+        self.chk_plateau.setChecked(True)
+        self.chk_norm = QCheckBox("归一化，并叠画之前的拟合做对比")
+        self.chk_norm.setChecked(True)
+        self.cmb_unit = QComboBox()
+        for unit, label in _BLEACH_UNITS:
+            self.cmb_unit.addItem(label, unit)
+        self.ed_cond_bleach = QLineEdit()
+        self.ed_cond_bleach.setPlaceholderText("入表用；缺项留空")
+        self.ed_comp_bleach = QLineEdit()
+        self.ed_comp_bleach.setPlaceholderText("默认取目录/文件名")
+        form.addRow(self.chk_plateau)
+        form.addRow(self.chk_norm)
+        form.addRow("输入时间单位", self.cmb_unit)
+        form.addRow("条件/溶剂", self.ed_cond_bleach)
+        form.addRow("化合物/组别", self.ed_comp_bleach)
+        lay.addLayout(form)
+        lay.addStretch(1)
+
+    def _on_norm_toggled(self, _on: bool = False) -> None:
+        """归一化只影响画法：有数据就按新画法重画，不算改了拟合。"""
+        if self._bleach_t:
+            self._plot_bleach(self._last_bleach)
+
+    def _mark_stale(self) -> None:
+        """拟合后改了选项：已有结果标「需要重算」（不自动重拟合）。"""
+        if self._last_bleach.get("ok"):
+            self._stale = True
+        self.panel.refresh()
 
     def _on_bleach_src_changed(self, *_args) -> None:     # noqa: ANN002 —— Qt 槽
         src = self.cmb_bleach_src.currentData()
@@ -207,15 +239,9 @@ class PhotobleachTab(QWidget):
     def _reload_bleach_series(self) -> None:
         if not getattr(self, "_bleach_spectra", None):
             return
-        try:
-            ble = _load_optional("core.analysis.photobleach")
-        except Exception:                              # noqa: BLE001 —— G-A 未落地
-            self.lbl_bleach_msg.setText(
-                "核心模块 core.analysis.photobleach 尚未落地：光漂白拟合暂不可用")
-            return
         mode = self.cmb_bleach_value.currentData() or "peak_abs"
         try:
-            t, y = ble.series_from_spectra(self._bleach_spectra, mode=mode)
+            t, y = photobleach.series_from_spectra(self._bleach_spectra, mode=mode)
             self._bleach_t = [float(v) for v in t]
             self._bleach_y = [float(v) for v in y]
         except Exception as err:                       # noqa: BLE001
@@ -223,11 +249,14 @@ class PhotobleachTab(QWidget):
             self._bleach_y = []
             self.lbl_bleach_msg.setText(f"时间序列提取失败：{err}")
             self.panel.logged.emit("WARNING", f"光漂白时间序列提取失败：{err}")
+            self._mark_stale()
             return
         self._bleach_label = (self.panel.data_dir.name if self.panel.data_dir
                               else "时间序列")
         self.lbl_bleach_msg.setText(
-            f"已载入 {len(self._bleach_y)} 个时间点（{mode}）→ 点「拟合 / 预览」")
+            f"已载入 {len(self._bleach_y)} 个时间点（{self.cmb_bleach_value.currentText()}）"
+            "→ 点「拟合 / 预览」")
+        self._mark_stale()
 
     def _choose_bleach_csv(self) -> None:
         start = str(self.panel.data_dir or app_root())
@@ -239,13 +268,7 @@ class PhotobleachTab(QWidget):
     def load_bleach_csv(self, path) -> bool:
         """载入成像 ROI 两列 CSV（时间,强度）；失败给中文原因不崩。"""
         try:
-            ble = _load_optional("core.analysis.photobleach")
-        except Exception:                              # noqa: BLE001
-            self.lbl_bleach_msg.setText(
-                "核心模块 core.analysis.photobleach 尚未落地：CSV 导入暂不可用")
-            return False
-        try:
-            t, y = ble.read_two_column_csv(Path(str(path)))
+            t, y = photobleach.read_two_column_csv(Path(str(path)))
         except ValueError as err:
             self.lbl_bleach_msg.setText(f"CSV 读取失败：{err}")
             self.panel.status.emit(f"CSV 读取失败：{err}")
@@ -260,6 +283,7 @@ class PhotobleachTab(QWidget):
         self.lbl_bleach_msg.setText(
             f"已载入 CSV：{len(self._bleach_y)} 个点 → 点「拟合 / 预览」")
         self.panel.status.emit(f"已载入光漂白 CSV：{Path(str(path)).name}")
+        self._mark_stale()
         return True
 
     def compute_bleach(self, checked: bool = False):    # noqa: ANN001 —— Qt 槽兼容
@@ -269,30 +293,22 @@ class PhotobleachTab(QWidget):
             self.lbl_bleach_msg.setText("请先载入时间序列谱目录或两列 CSV")
             self.btn_add_bleach.setEnabled(False)
             return {"ok": False, "reason": "没有可拟合的时间序列"}
-        try:
-            ble = _load_optional("core.analysis.photobleach")
-        except Exception:                              # noqa: BLE001
-            self.lbl_bleach_msg.setText(
-                "核心模块 core.analysis.photobleach 尚未落地：拟合暂不可用")
-            return {"ok": False, "reason": "core 未落地"}
         unit = self.cmb_unit.currentData() or "min"
         try:
-            res = ble.fit_photobleaching(
+            res = photobleach.fit_photobleaching(
                 self._bleach_t, self._bleach_y,
                 plateau=self.chk_plateau.isChecked(), t_unit=unit)
         except Exception as err:                       # noqa: BLE001
             res = {"ok": False, "reason": f"{type(err).__name__}: {err}"}
         self._last_bleach = dict(res or {})
+        self._stale = False
         self._apply_bleach_result(self._last_bleach)
+        self.panel.refresh()
         return self._last_bleach
 
     def _bleach_t_minutes(self) -> list:
         unit = self.cmb_unit.currentData() or "min"
-        try:
-            ble = _load_optional("core.analysis.photobleach")
-            return [float(v) for v in ble.time_to_minutes(self._bleach_t, unit)]
-        except Exception:                              # noqa: BLE001 —— 退化同值
-            return [float(v) for v in self._bleach_t]
+        return [float(v) for v in photobleach.time_to_minutes(self._bleach_t, unit)]
 
     def _apply_bleach_result(self, res: dict) -> None:
         ok = bool((res or {}).get("ok"))
@@ -407,22 +423,13 @@ class PhotobleachTab(QWidget):
                      if _finite(r2) else ""),
         })
         self.panel.add_row(row)
-        self.panel.tabs.setCurrentWidget(self.panel.tab_char)
+        self.panel.show_char_table()
         return True
 
     def export_decay_figure(self):
         """FR-45 衰减曲线新图型出口（core/render/photophysics.plot_decay_curve）。"""
         if not self._bleach_t:
             self.panel.status.emit("请先载入并拟合光漂白数据，再导出衰减图")
-            return None
-        try:
-            mod = _load_optional("core.render.photophysics")
-            fn = getattr(mod, "plot_decay_curve")
-        except Exception:                              # noqa: BLE001 —— G-C 未落地
-            msg = ("core/render/photophysics 尚未落地：衰减图导出暂不可用"
-                   "（数值结果不受影响）")
-            self.panel.status.emit(msg)
-            self.panel.logged.emit("WARNING", msg)
             return None
         res = dict(self._last_bleach or {})
         plateau = bool(self.chk_plateau.isChecked())
@@ -439,18 +446,9 @@ class PhotobleachTab(QWidget):
             return None
         out_path = photo_out_path(self.panel.cfg, "decay")
         try:
-            got = fn(self._bleach_t_minutes(),
-                     [float(v) for v in self._bleach_y],
-                     fit=fit_spec, out_path=out_path, cfg=self.panel.cfg)
-        except TypeError:
-            try:
-                got = fn(self._bleach_t_minutes(),
-                         [float(v) for v in self._bleach_y],
-                         fit=fit_spec, out_path=out_path)
-            except Exception as err:                   # noqa: BLE001
-                self.panel.status.emit(f"衰减图导出失败：{err}")
-                self.panel.logged.emit("ERROR", f"衰减图导出失败：{err}")
-                return None
+            got = photophysics.plot_decay_curve(
+                self._bleach_t_minutes(), [float(v) for v in self._bleach_y],
+                fit=fit_spec, out_path=out_path, cfg=self.panel.cfg)
         except Exception as err:                       # noqa: BLE001
             self.panel.status.emit(f"衰减图导出失败：{err}")
             self.panel.logged.emit("ERROR", f"衰减图导出失败：{err}")
@@ -465,17 +463,8 @@ class PhotobleachTab(QWidget):
         spectra = [s for s in (self._bleach_spectra or [])
                    if getattr(s, "ok", True)]
         if not spectra:
-            self.panel.status.emit("请先在「光漂白」子页载入时间序列谱目录，再导出光谱演化图")
+            self.panel.status.emit("请先在「光漂白」这一步载入时间序列谱目录，再导出光谱演化图")
             return None
-        try:
-            mod = _load_optional("core.render.photophysics")
-            fn = getattr(mod, "plot_spectral_evolution")
-        except Exception:                              # noqa: BLE001 —— G-C 未落地
-            msg = ("core/render/photophysics 尚未落地：光谱演化图导出暂不可用")
-            self.panel.status.emit(msg)
-            self.panel.logged.emit("WARNING", msg)
-            return None
-        from core.inputs.io import parse_filename
         fn_cfg = (self.panel.cfg or {}).get("filename") or {}
         frames = []
         for i, s in enumerate(spectra):
@@ -490,14 +479,7 @@ class PhotobleachTab(QWidget):
                            "label": Path(str(getattr(s, "path", ""))).name})
         out_path = photo_out_path(self.panel.cfg, "evolution")
         try:
-            got = fn(frames, out_path, cfg=self.panel.cfg)
-        except TypeError:
-            try:
-                got = fn(frames, out_path)
-            except Exception as err:                   # noqa: BLE001
-                self.panel.status.emit(f"光谱演化图导出失败：{err}")
-                self.panel.logged.emit("ERROR", f"光谱演化图导出失败：{err}")
-                return None
+            got = photophysics.plot_spectral_evolution(frames, out_path, cfg=self.panel.cfg)
         except Exception as err:                       # noqa: BLE001
             self.panel.status.emit(f"光谱演化图导出失败：{err}")
             self.panel.logged.emit("ERROR", f"光谱演化图导出失败：{err}")
@@ -506,3 +488,58 @@ class PhotobleachTab(QWidget):
             self.panel.status.emit(f"已导出光谱演化图：{got}")
             self.panel.logged.emit("INFO", f"光物理表征：光谱演化图已导出 {got}")
         return got
+
+    # ── 工作台：状态 / 摘要 / 结论条 ──
+    def has_result(self) -> bool:
+        return bool(self._last_bleach.get("ok"))
+
+    def is_stale(self) -> bool:
+        return self._stale and self.has_result()
+
+    def summary(self) -> str:
+        """检查器里这一步折叠后的一行摘要。"""
+        res = self._last_bleach
+        if self.has_result():
+            k = _as_float(res.get("k_min", res.get("k")))
+            t_half = _as_float(res.get("t_half_min", res.get("t_half")))
+            text = f"k = {k:.3g} min⁻¹ · t½ = {t_half:.3g} min"
+            return text + (" · 需要重拟合" if self._stale else "")
+        if self._bleach_t:
+            return f"已载入 {len(self._bleach_t)} 个点，还没拟合"
+        return "还没载入数据"
+
+    def fill_verdict(self, card) -> None:
+        """结论条：大数 = k（min⁻¹），一句话 = t½，说明行 = R²、loss 与提醒。"""
+        res = self._last_bleach
+        if not res:
+            card.set_empty("还没有拟合结果",
+                           f"已载入 {len(self._bleach_t)} 个点，点「拟合 / 预览」"
+                           if self._bleach_t else
+                           "在右侧选时间序列谱目录或两列 CSV，再点「拟合 / 预览」")
+            return
+        if not res.get("ok"):
+            card.set_failed("拟合失败", str(res.get("reason") or res.get("error") or "原因未知"))
+            return
+        k = _as_float(res.get("k_min", res.get("k")))
+        t_half = _as_float(res.get("t_half_min", res.get("t_half")))
+        r2, loss = _as_float(res.get("r2")), _as_float(res.get("loss_pct"))
+        n = int(_as_float(res.get("n_points"), 0) or len(self._bleach_t))
+        lines = []
+        if self._stale:
+            lines.append("拟合之后改了数据或选项：结果需要重新拟合")
+        lines.append(f"R² = {r2:.4f} · 共 {n} 个点" if _finite(r2) else f"共 {n} 个点")
+        if _finite(loss):
+            lines.append(f"整段损失 {loss:.1f}%")
+        lines += [str(i) for i in (res.get("issues") or [])]
+        name = self.ed_comp_bleach.text().strip() or self._bleach_label or "序列"
+        groups = []
+        for j, run in enumerate(self._bleach_runs[-4:]):
+            rk = _as_float((run.get("res") or {}).get("k_min", (run.get("res") or {}).get("k")))
+            groups.append({"name": str(run.get("label") or "序列"),
+                           "sub": f"k {rk:.3g}" if _finite(rk) else "—",
+                           "color": GROUP_COLORS[j % len(GROUP_COLORS)]})
+        card.set_verdict(label=f"光漂白速率 k · {name}",
+                         value=f"{k:.3g}" if _finite(k) else "—", error="min⁻¹",
+                         headline=(f"半衰期 t½ = {t_half:.3g} min" if _finite(t_half)
+                                   else "半衰期算不出来"),
+                         lines=lines[:3], groups=groups if len(groups) > 1 else ())
