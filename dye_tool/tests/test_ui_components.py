@@ -263,7 +263,8 @@ def test_workbench_pages_share_one_implementation():
     assert (StackPage.PRESET_SECTION, StackPage.PAGE_MARK) == ("stack", "③")
     assert (SpectraPage.PRESET_SECTION, SpectraPage.PAGE_MARK) == ("spectra", "④")
     for name in ("_export_working_view", "_apply_preset_to_working", "_on_display_preset_chosen",
-                 "_save_display_preset_dialog", "_init_layout_sizes", "_on_advanced_style"):
+                 "_save_display_preset_dialog", "_assemble", "_go_step", "_update_flow",
+                 "_on_advanced_style"):
         assert name not in vars(StackPage) and name not in vars(SpectraPage), name
         assert getattr(StackPage, name) is getattr(WorkbenchPage, name)
 

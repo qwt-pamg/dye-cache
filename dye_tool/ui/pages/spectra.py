@@ -19,15 +19,16 @@ import numpy as np
 from typing import Optional
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleSpinBox, QFormLayout, QGroupBox, QHBoxLayout, QHeaderView, QLabel, QPushButton, QScrollArea, QSplitter, QStackedWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleSpinBox,
+                               QFormLayout, QGroupBox, QHBoxLayout, QHeaderView, QLabel,
+                               QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout,
+                               QWidget)
 
 from core.io import Spectrum, load_spectra_files
 from core.pipeline import run_spectra_plots
 from core.spectra import molar_extinction
 from ui.pages.workbench import WorkbenchPage
-from ui.widgets.export_bar import ExportBar
-from ui.widgets.live_plot import LivePlotCanvas, label_text
-from ui.widgets.mpl_canvas import CanvasPanel
+from ui.widgets.live_plot import label_text
 from ui.widgets.style_panel import (MAPPED_KEYS, SPECTRA_MAPPED_KEYS,
                                     StylePanel)
 from ui import theme
@@ -42,7 +43,7 @@ MODE_LABELS = {
     "auto": "自动配对出镜像图",
 }
 
-#: V2.6 FR-38.3：作图台布局适配基线（参数表最小高度 / 水平 body 左栏 360–470）
+#: 左栏光谱表最小高度
 PARAM_TABLE_MIN_H = 140
 
 
@@ -55,7 +56,6 @@ class SpectraPage(WorkbenchPage):
                 "工作视图可直接交互；定稿图用「生成定稿图」。")
     PRESET_SECTION = "spectra"
     PAGE_MARK = "④"
-    BODY_LEFT_MIN_W = 390
     #: V2.6 FR-41.5：「在分析页记录」→ (abs 文件路径, em 文件路径)；
     #: 主窗口把该对预填给②分析页的「斯托克斯位移」测量卡并切页。
     record_pair_requested = Signal(str, str)
@@ -90,31 +90,13 @@ class SpectraPage(WorkbenchPage):
     def _build(self) -> None:
         self.btn_files = QPushButton("选择光谱文件…")
         self.btn_dir = QPushButton("选择目录…")
-        self.btn_run = QPushButton("▶ 生成定稿图")
-        theme.mark(self.btn_run, "primary")
-        self.btn_run.setToolTip(
-            "定稿图由分析流水线生成（JACS 版式）。载入/切换不再自动生图；\n"
-            "探索性交互在工作视图（活画布）里完成。")
         self.lbl_info = QLabel("尚未载入光谱")
         theme.mark(self.lbl_info, "muted")
+        self.lbl_info.setWordWrap(True)
         self.btn_files.clicked.connect(self._choose_files)
         self.btn_dir.clicked.connect(self._choose_dir)
-        self.btn_run.clicked.connect(self._run)
-        self.btn_run.setEnabled(False)
-        top = QHBoxLayout()
-        top.addWidget(self.btn_files)
-        top.addWidget(self.btn_dir)
-        top.addWidget(self.lbl_info, 1)
-        self.chk_live = QCheckBox("实时生图预览")
-        self.chk_live.setChecked(True)
-        self.chk_live.setToolTip("调整出图/光谱参数时用最终渲染器低 dpi 预览；不写正式 run")
-        self.lbl_live = QLabel("预览待命")
-        theme.mark(self.lbl_live, "hint")
-        top.addWidget(self.chk_live)
-        top.addWidget(self.lbl_live)
-        top.addWidget(self.btn_run)
 
-        # ── 选项 ──
+        # ── 作图设置（「载入」步）──
         self.cmb_mode = QComboBox()
         self.cmb_mode.addItems([MODE_LABELS[m] for m in self._modes])
         self.cmb_norm = QComboBox()
@@ -130,27 +112,19 @@ class SpectraPage(WorkbenchPage):
         self.cmb_em = QComboBox()
         self.chk_mark = QLabel("λmax 与斯托克斯位移将自动标注")
         theme.mark(self.chk_mark, "muted")
-        box = QGroupBox("作图设置")
+        box = QGroupBox("画什么")
         f = QFormLayout(box)
         f.addRow("作图模式", self.cmb_mode)
         f.addRow("归一化方式", self.cmb_norm)
-        f.addRow("", self.chk_despike)
-        self.cmb_display_preset = QComboBox()
-        self.cmb_display_preset.setToolTip(
-            "套用 presets.yaml 的 spectra 节显示预设（只影响本页视图）")
-        self.btn_display_preset_save = QPushButton("保存…")
-        self.btn_display_preset_save.setToolTip("把当前④作图设置存为命名预设（presets.yaml）")
-        self.btn_display_preset_save.clicked.connect(self._save_display_preset_dialog)
-        self.cmb_display_preset.currentIndexChanged.connect(self._on_display_preset_chosen)
-        preset_row = QHBoxLayout()
-        preset_row.addWidget(self.cmb_display_preset, 1)
-        preset_row.addWidget(self.btn_display_preset_save)
-        f.addRow("显示预设", preset_row)
-        self._refresh_display_presets()
+        f.addRow(self.chk_despike)
         f.addRow("吸收谱（镜像用）", self.cmb_abs)
         f.addRow("发射谱（镜像用）", self.cmb_em)
-        f.addRow("", self.chk_mark)
+        f.addRow(self.chk_mark)
         self.cmb_mode.currentIndexChanged.connect(self._on_mode)
+        # 只有一种模式（紫外叠图）时没有配对可选 → 整段收起
+        for w in (self.cmb_abs, self.cmb_em, self.chk_mark):
+            f.setRowVisible(w, len(self._modes) > 1)
+        f.setRowVisible(self.cmb_mode, len(self._modes) > 1)
 
         # ── 摩尔消光系数（可选，二期） ──
         self.sp_a = QDoubleSpinBox()
@@ -181,162 +155,73 @@ class SpectraPage(WorkbenchPage):
         row.addWidget(self.lbl_eps, 1)
         fe.addRow("", self._wrap(row))
 
-        # ── 光谱清单 ──
+        p_load = QWidget()
+        lp = QVBoxLayout(p_load)
+        lp.setContentsMargins(0, 0, 0, 0)
+        btns = QHBoxLayout()
+        btns.addWidget(self.btn_files)
+        btns.addWidget(self.btn_dir)
+        lp.addLayout(btns)
+        lp.addWidget(self.lbl_info)
+        hint = QLabel("也可以把光谱文件或目录直接拖进来。")
+        theme.mark(hint, "hint")
+        hint.setWordWrap(True)
+        lp.addWidget(hint)
+        lp.addWidget(box)
+        if self._show_eps:
+            lp.addWidget(box_eps)
+        lp.addStretch(1)
+
+        # ── 左栏：已载入光谱 ──
         self.tbl = QTableWidget(0, 4)
         self.tbl.setHorizontalHeaderLabels(["文件名", "类型", "λmax (nm)", "点数"])
         self.tbl.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.tbl.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.tbl.verticalHeader().setVisible(False)
-        self.tbl.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
-        self.tbl.setMinimumHeight(PARAM_TABLE_MIN_H)   # V2.6 FR-38.3：表格最小高度 120–160
-        box_t = QGroupBox("已载入光谱")
-        lt = QVBoxLayout(box_t)
-        lt.addWidget(self.tbl)
+        self.tbl.setTextElideMode(Qt.ElideMiddle)
+        hdr = self.tbl.horizontalHeader()
+        hdr.setSectionResizeMode(QHeaderView.ResizeToContents)
+        hdr.setSectionResizeMode(0, QHeaderView.Stretch)
+        self.tbl.setMinimumHeight(PARAM_TABLE_MIN_H)
+        left = QWidget()
+        ll = QVBoxLayout(left)
+        ll.setContentsMargins(0, 0, 0, 0)
+        ll.setSpacing(4)
+        lbl = QLabel("已载入光谱")
+        theme.mark(lbl, "section")
+        ll.addWidget(lbl)
+        ll.addWidget(self.tbl, 1)
 
-        # V2.6 FR-41.5：单对语义标签（当前配对 / 未选择配对 / auto 多对逐行）
+        # ── 中栏结果区：单对语义标签（V2.6 FR-41.5：当前配对 / 未选择配对 / auto 多对逐行）──
         self.lbl_stokes = QLabel("先选择光谱目录")
-        theme.mark(self.lbl_stokes, "section")
+        theme.mark(self.lbl_stokes, "strong")
         self.lbl_stokes.setWordWrap(True)
         self.btn_record_pair = QPushButton("在分析页记录")
         self.btn_record_pair.setToolTip(
             "把当前配对（吸收/发射各一支）带到②分析页的「斯托克斯位移」测量卡：\n"
-            "自动预填该对 → 确认后点「加入对比表」。仅镜像/上下两栏模式、已配对时可用。\n"
-            "")
+            "自动预填该对 → 确认后点「加入对比表」。仅镜像/上下两栏模式、已配对时可用。")
         self.btn_record_pair.setEnabled(False)
         self.btn_record_pair.clicked.connect(self._record_current_pair)
-        box_s = QGroupBox("结果")
-        ls = QVBoxLayout(box_s)
-        ls.addWidget(self.lbl_stokes)
-        ls.addWidget(self.btn_record_pair)
+        results = QWidget()
+        lr = QHBoxLayout(results)
+        lr.setContentsMargins(0, 0, 0, 0)
+        lr.addWidget(self.lbl_stokes, 1)
+        lr.addWidget(self.btn_record_pair, 0, Qt.AlignTop)
+        # 只有叠图模式（紫外）时没有配对结果 → 结果区不占地方
+        results.setVisible(any(m != "overlay" for m in self._modes))
 
-        # V2.6 FR-38.3：左栏参数区改 QScrollArea(widgetResizable) —— 高度不足时**整栏滚动**，
-        # 不再用「固定高度垂直 splitter」把底部「结果/ε」裁掉（1006px 高度必现）。
-        left = QWidget()
-        self.left_panel = left
-        lv = QVBoxLayout(left)
-        lv.setContentsMargins(0, 0, 0, 0)
-        lv.addWidget(box)
-        if self._show_eps:
-            lv.addWidget(box_eps)
-        lv.addWidget(box_t)
-        lv.addWidget(box_s)
-        lv.addStretch(0)
-        left_scroll = QScrollArea()
-        self.left_scroll = left_scroll
-        left_scroll.setWidget(left)
-        left_scroll.setWidgetResizable(True)
-        left_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        left_scroll.setMinimumWidth(self.BODY_LEFT_MIN_W)
-        left_scroll.setMaximumWidth(self.BODY_LEFT_MAX_W)
-        left = left_scroll
-
-        # V2.5 FR-32/34：工作视图（活画布）与定稿预览分离
-        self.live = LivePlotCanvas(cfg=self.cfg)
-        self.live.readout.connect(self.status)
-        self.canvas = CanvasPanel()
-        from ui.widgets.live_render_preview import LiveRenderPreview
-        self.live_preview = LiveRenderPreview(self, self._render_live_preview)
-        self.live_preview.updated.connect(self.canvas.set_images)
-        self.live_preview.state.connect(self.lbl_live.setText)
-        self.live_preview.failed.connect(lambda m: self.logged.emit("WARNING", f"实时预览失败：{m}"))
-        self.chk_live.toggled.connect(self.live_preview.set_enabled)
-        self.view_stack = QStackedWidget()
-        self.view_stack.addWidget(self.live)
-        self.view_stack.addWidget(self.canvas)
-        self.cmb_view = QComboBox()
-        self.cmb_view.addItems(["工作视图", "定稿预览"])
-        self.cmb_view.setToolTip(
-            "工作视图 = 临时交互（缩放/平移/读数/标注/实时样式），不等于定稿产物；\n"
-            "定稿预览只显示已生成图件，不触发生成")
-        self.cmb_view.currentIndexChanged.connect(self._on_view_changed)
-        self.chk_readout = QCheckBox("读数模式")
-        self.chk_readout.setToolTip(
-            "鼠标移动时在状态栏显示最近数据点的物理坐标（不插值；仅本次会话）")
-        self.chk_readout.toggled.connect(self.live.set_readout_enabled)
-        self.cmb_annot = QComboBox()
-        self.cmb_annot.addItem("无标注", "")
-        self.cmb_annot.addItem("文本", "text")
-        self.cmb_annot.addItem("箭头", "arrow")
-        self.cmb_annot.addItem("区域", "rect")
-        self.cmb_annot.setToolTip("标注模式（仅本次会话；随「按当前视图导出」带出，不写入结果目录）")
-        self.cmb_annot.currentIndexChanged.connect(
-            lambda i: self.live.set_annotation_mode(self.cmb_annot.itemData(i)))
-        self.btn_export_view = QPushButton("按当前视图导出…")
-        self.btn_export_view.setToolTip(
-            "把工作视图（含标注）导出为 workspace_spectra_<时间>.png/svg；\n"
-            "不进 run 产物、绝不覆盖 fig_*、零 PDF（filter_formats 守）")
-        self.btn_export_view.clicked.connect(self._export_working_view)
-        view_bar = QHBoxLayout()
-        view_bar.addWidget(QLabel("视图"))
-        view_bar.addWidget(self.cmb_view)
-        view_bar.addWidget(self.chk_readout)
-        view_bar.addWidget(self.cmb_annot)
-        view_bar.addStretch(1)
-        view_bar.addWidget(self.btn_export_view)
-        box_fig = QGroupBox("图件视图")
-        lfig = QVBoxLayout(box_fig)
-        lfig.addLayout(view_bar)
-        lfig.addWidget(self.view_stack, 1)
-        box_style = QGroupBox("曲线样式（仅本次会话；「写入出图参数」后才保存）")
-        ls = QVBoxLayout(box_style)
-        self.style_panel = StylePanel(with_spectra=True)   # V25-D1：spectra 键区
-        # V2.6 FR-38.3：风格面板自身约 500px 高 → 独立 QScrollArea（必须可滚，不把底部按钮顶出屏幕）
-        style_scroll = QScrollArea()
-        self.style_scroll = style_scroll
-        style_scroll.setWidget(self.style_panel)
-        style_scroll.setWidgetResizable(True)
-        style_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        ls.addWidget(style_scroll, 1)
-        # V2.6 FR-38.3 + Lead 仲裁：动作行做成**固定页脚**（始终可见、不被窗口裁剪），
-        # 滚动区只承载说明/曲线表/可映射键（A38.2 的「写入出图参数」严格初始可见）。
-        self.style_actions = self.style_panel.take_actions_widget()
-        ls.addWidget(self.style_actions, 0)
-        self.style_panel.style_changed.connect(self._on_live_style)
-        self.style_panel.mapped_changed.connect(self._on_mapped_preview)
+        self._build_shared(with_spectra=True)   # V25-D1：spectra 键区
+        self.btn_run.setToolTip(
+            "定稿图由分析流水线生成（JACS 版式）。载入/切换不再自动生图；\n"
+            "探索性交互在工作视图（活画布）里完成。")
+        self.chk_live.setToolTip("调整出图/光谱参数时用最终渲染器低 dpi 预览；不写正式 run")
         self.style_panel.spectra_changed.connect(self._on_spectra_preview)
-        for _sig in (self.style_panel.style_changed, self.style_panel.mapped_changed,
-                     self.style_panel.spectra_changed):
-            _sig.connect(lambda *_: self._schedule_preview())
+        self.style_panel.spectra_changed.connect(lambda *_: self._schedule_preview())
         for _w in (self.cmb_mode, self.cmb_norm):
             _w.currentIndexChanged.connect(lambda *_: self._schedule_preview())
         self.chk_despike.toggled.connect(lambda *_: self._schedule_preview())
-        self.style_panel.write_requested.connect(self._on_write_plot_params)
-        self.style_panel.preset_requested.connect(self._on_save_plot_preset)
-        self.style_panel.advanced_requested.connect(self._on_advanced_style)
-        # V25-B4/D1：非法颜色/样式被拒绝 → 状态栏 + 日志提示（不崩、不改画布）
-        self.live.style_rejected.connect(self._on_style_rejected)
-        self.style_panel.edit_rejected.connect(self._on_style_rejected)
+        self._assemble(left=left, load_page=p_load, results=results)
 
-        # V2.6 FR-38.3：右栏 = 画布 + 实时参数编辑的**垂直 QSplitter**（可拖动/可折叠，画布 stretch 大）
-        right = QSplitter(Qt.Vertical)
-        self.right_split = right
-        right.addWidget(box_fig)
-        right.addWidget(box_style)
-        right.setStretchFactor(0, 1)
-        right.setStretchFactor(1, 0)
-        right.setSizes([560, 300])
-
-        # V2.6 FR-38.3：水平 body splitter —— 左栏初值按页面宽度自适应（360–470），右栏 stretch 1，
-        # 窗口变窄时优先压缩画布而不是把左栏按钮挤出可视区。
-        body = QSplitter(Qt.Horizontal)
-        self.body = body
-        body.addWidget(left)
-        body.addWidget(right)
-        body.setStretchFactor(0, 0)
-        body.setStretchFactor(1, 1)
-        body.setSizes([self._body_left_width(), 1200])
-
-        self.export = ExportBar()
-        # V2.3 FR-24.2/24.6：导出条与画布的常规反馈走状态栏（不弹模态）
-        self.export.message.connect(self.status)
-        self.canvas.status_message.connect(self.status)
-        lay = QVBoxLayout(self)
-        lay.addWidget(self.header())
-        self.setToolTip("可把数据目录 / 光谱文件直接拖到这里")
-        lay.addLayout(top)
-        lay.addWidget(body, 1)
-        lay.addWidget(self.progress_row())
-        lay.addWidget(self.export)
         self._on_mode(0)
         # V25-B3/D1：载入前先用 cfg 播种可映射键（用户编辑过则不覆盖）
         self._seed_style_panel()
@@ -349,7 +234,53 @@ class SpectraPage(WorkbenchPage):
         self.refresh_stokes_label()
         self.chk_despike.toggled.connect(lambda *_: self._rebuild_working_view())
 
-    # ══════════════ V2.6 FR-38.3：水平 body splitter 自适应 ══════════════
+    # ══════════════ 流程条摘要 / 结论条 ══════════════
+    def _has_data(self) -> bool:
+        return any(s.ok for s in (self.spectra or []))
+
+    def _load_summary(self) -> str:
+        good = [s for s in (self.spectra or []) if s.ok]
+        if not good:
+            return "还没载入光谱"
+        return f"{len(good)} 支 · {self.cmb_mode.currentText()}"
+
+    def _style_summary(self) -> str:
+        preset = self.cmb_display_preset.currentText()
+        tail = "" if self.cmb_display_preset.currentIndex() <= 0 else f" · 预设 {preset}"
+        return f"{self.cmb_norm.currentText()}{tail}"
+
+    def _export_spec(self) -> tuple[list, int]:
+        _fmts, dpi = super()._export_spec()
+        sp = (self.cfg or {}).get("spectra") or {}
+        return list(sp.get("export_formats") or ["png", "svg"]), dpi
+
+    def _update_verdict(self) -> None:
+        good = [s for s in (self.spectra or []) if s.ok]
+        if not good:
+            if self.spectra:
+                self.verdict.set_failed("没有可解析的光谱",
+                                        "请确认是两列文本或仪器导出的荧光格式")
+            else:
+                self._verdict_empty()
+            return
+        n_abs = sum(1 for s in good if s.kind == "abs")
+        n_em = sum(1 for s in good if s.kind == "em")
+        mode = self._mode_key(self.cmb_mode.currentIndex())
+        n_show = len(self.live.curve_info())
+        lines = []
+        if mode == "overlay":
+            lines.append(f"叠图里画了 {n_show} 条（{self._kind_label(self._overlay_kinds)}）")
+        else:
+            lines.append(self.lbl_stokes.text().splitlines()[0] if self.lbl_stokes.text() else "")
+        final = self._verdict_final_line()
+        if final:
+            lines.append(final)
+        self.verdict.set_verdict(
+            label=self.TITLE.split("·")[0].strip(" ①②③④⑤") or "已载入",
+            value=f"{len(good)} 支谱",
+            headline=(f"吸收 {n_abs} · 发射 {n_em} · {self.cmb_mode.currentText()} · "
+                      f"{self.cmb_norm.currentText()}"),
+            lines=lines)
 
     @staticmethod
     def _wrap(layout) -> QWidget:
@@ -561,6 +492,8 @@ class SpectraPage(WorkbenchPage):
                                             and not bool(self._busy))
         except Exception:                              # noqa: BLE001
             pass
+        if hasattr(self, "verdict"):
+            self._update_verdict()
         return text
 
     def _auto_pair_label_lines(self, stokes) -> list:
@@ -595,6 +528,7 @@ class SpectraPage(WorkbenchPage):
         had = bool(self._had_spectra)
         self.spectra = spectra
         self._had_spectra = bool(spectra)
+        self._final_figs, self._final_stale = [], False      # 新数据：旧定稿图不再对应
         # V2.6 FR-41.5：换目录 → 配对候选/预览重置（②分析页对比表由那边保留）
         self._auto_pair_lines = []
         # FR-33.4：重载数据 → per-curve 会话覆写失效
@@ -701,6 +635,7 @@ class SpectraPage(WorkbenchPage):
         mode = self._mode_key(self.cmb_mode.currentIndex())
         if not good:
             self.live.clear()
+            self._after_working_view()
             return
         panels: list[dict] = []
         style = self._spectra_style()
@@ -769,6 +704,7 @@ class SpectraPage(WorkbenchPage):
         self._sync_style_panel()
         self.cmb_view.setCurrentIndex(0)
         self.view_stack.setCurrentIndex(0)
+        self._after_working_view()
 
     # ── V2.5 FR-33：风格栏桥接（实时=重绘；写入/预设=显式动作） ──
 
@@ -1054,6 +990,7 @@ class SpectraPage(WorkbenchPage):
             self._final_figs = list(Path(res.out_dir).glob("*.png"))
             self.canvas.set_images(self._final_figs)
             self.cmb_view.setCurrentIndex(1)          # 显式生图完成 → 展示定稿预览
+            self._mark_final(self._final_figs)
         if not res.ok:
             self.logged.emit("ERROR", res.message or "出图失败")
             return

@@ -1,5 +1,9 @@
 # -*- coding: utf-8 -*-
-"""④ 档案页：染料库（:mod:`ui.pages.dye_library`）+ 最近结果直达。"""
+"""④ 档案页：染料库 · 历史 run · 结果直达（布局与动作都在 :mod:`ui.pages.dye_library`）。
+
+本页只是任务流布局下的壳：把同一个 :class:`DyeLibraryPage` 铺满整页（经典布局里它直接当页签），
+顶部细条的页名换成「档案」。
+"""
 from __future__ import annotations
 
 import logging
@@ -12,7 +16,7 @@ log = logging.getLogger("dye_tool.ui.pages")
 
 
 class ArchivePage(QWidget):
-    """档案：染料库（原⑤）+ 最近结果直达。"""
+    """档案：染料库（原⑤）——左栏染料 / 旧目录，中栏历史 run 与图件，右栏操作。"""
 
     params_loaded = Signal(dict, dict)
 
@@ -33,6 +37,7 @@ class ArchivePage(QWidget):
                 self.dye_page = DyeLibraryPage(out_root=out_root)
                 lay.addWidget(self.dye_page, 1)
             self.dye_page.params_loaded.connect(self.params_loaded)
+            self.dye_page.lbl_title.setText("档案")
         except Exception as err:                           # noqa: BLE001
             lb = QLabel(f"染料库页不可用：{err}")
             lb.setWordWrap(True)
