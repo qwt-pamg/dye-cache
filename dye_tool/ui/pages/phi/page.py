@@ -361,19 +361,8 @@ class PhiPage(PageBase):
         if d:
             self._load_dir(d)
 
-    def dragEnterEvent(self, e) -> None:               # noqa: N802 —— Qt 接口
-        if e.mimeData().hasUrls():
-            e.acceptProposedAction()
-
-    def dropEvent(self, e) -> None:                    # noqa: N802 —— Qt 接口
-        """支持拖入目录或文件（FR-1.1）。"""
-        urls = [Path(u.toLocalFile()) for u in e.mimeData().urls()]
-        dirs = [p for p in urls if p.is_dir()]
-        if dirs:
-            self._load_dir(dirs[0])
-        elif urls:
-            self._load_dir(urls[0].parent)
-        e.acceptProposedAction()
+    def on_dir_dropped(self, d: Path) -> None:
+        self._load_dir(d)
 
     def _load_dir(self, d: Optional[Path]) -> None:
         """后台扫描目录并填充文件清单（防界面冻结）。"""
@@ -809,7 +798,7 @@ class PhiPage(PageBase):
             self.settings_panel._apply()
         except Exception as err:                           # noqa: BLE001
             log.warning("统一页设置应用失败：%s", err)
-        out_root = self._out_root()
+        out_root = self.out_root()
         self._last_export_mode = "preview"       # A09：本次产物档位
         self.table.setRowCount(0)
         self.backfill.cancel()                     # 新分析 → 旧的补渲作废
@@ -883,11 +872,6 @@ class PhiPage(PageBase):
             self.status.emit(f"当前图：{src} ｜ {label} ｜ {run_dir or '（未运行）'}")
         except Exception:                                  # noqa: BLE001 —— 状态栏不许崩
             pass
-
-    def _out_root(self) -> Path:
-        """输出根目录（V2.5 D10：唯一解析在 core.paths.resolve_out_root）。"""
-        from core.paths import resolve_out_root
-        return resolve_out_root(self.cfg)
 
     def _on_analyzed(self, rr) -> None:
         self._last_rr = rr
@@ -967,18 +951,12 @@ class PhiPage(PageBase):
                   "必要时在「预分析整定」里修正时间/染料名，然后点「重试」重新分析。")
 
     def _update_result_actions(self, rr) -> None:
-        ok = bool(getattr(rr, "ok", False))
-        if ok:
-            run_dir = str(getattr(rr, "run_dir", "") or "")
-            text = self._build_result_text(rr)
-            self._last_result_text = text
-            self.actions.set_output(run_dir or None)
-            self.actions.set_result_text(text)
-            self.actions.set_state(True)
+        if not getattr(rr, "ok", False):
+            self.actions.show_result(False, failure_hint=self._failure_hint(rr))
             return
-        self.actions.set_output(None)
-        self.actions.set_result_text("")
-        self.actions.set_state(False, failure_hint=self._failure_hint(rr))
+        self._last_result_text = self._build_result_text(rr)
+        self.actions.show_result(True, output=str(getattr(rr, "run_dir", "") or "") or None,
+                                 text=self._last_result_text)
 
     # ══════════════ P5 / P8：导出条上的两个出口 ══════════════
     # M3（评审记录）：这两件事**都必须放到后台线程**。
@@ -1034,10 +1012,10 @@ class PhiPage(PageBase):
         # 给目录 → 引擎自己按 cfg["qc_dashboard"]["export"] 决定文件名与格式
         #
         # G17（第二轮审查）：原来写 `Path(self.export.run_dir() or
-        # self.cfg["gui"].get("out_root","runs"))` —— 相对 out_root **不经 `_out_root()`**，
+        # self.cfg["gui"].get("out_root","runs"))` —— 相对 out_root **不经 `out_root()`**，
         # 于是 run_dir 为 None 时目录会落在**进程 CWD**（取决于从哪儿启动 exe），
-        # 与其它产物各走各的。这里复用现成的 `_out_root()`（:431）。
-        out_dir = Path(self.export.run_dir() or self._out_root())
+        # 与其它产物各走各的。这里复用现成的 `out_root()`。
+        out_dir = Path(self.export.run_dir() or self.out_root())
         cfg = self.cfg
 
         def task(progress_cb, log_cb):

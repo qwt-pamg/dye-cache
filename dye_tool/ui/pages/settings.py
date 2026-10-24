@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 from typing import Optional
 
 from PySide6.QtWidgets import (QCheckBox, QHBoxLayout, QLabel, QMessageBox,
@@ -119,13 +118,10 @@ class SettingsPage(PageBase):
         self.txt_cfg.setPlainText("\n".join(lines))
 
     # ── 目录整理（P9） ──
-    def _out_root(self) -> Path:
-        from core.paths import resolve_out_root
-        return resolve_out_root(self.cfg)
 
     def _plan_reorg(self) -> None:
         from core.report.reorg_runs import describe_plan, plan_reorg
-        out_root = self._out_root()
+        out_root = self.out_root()
 
         def task(progress_cb, log_cb):
             progress_cb(20, "扫描 runs/")

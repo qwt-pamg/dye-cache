@@ -80,6 +80,13 @@ class ResultActions(QWidget):
             self.lbl_fix.setText(str(failure_hint or ""))
             self.lbl_fix.setVisible(bool(failure_hint))
 
+    def show_result(self, ok: bool, *, output=None, text: str = "",
+                    failure_hint: str = "") -> None:
+        """一次登记任务结果：成功才开放输出入口，失败显示修复提示并开放重试。"""
+        self.set_output(output if ok else None)
+        self.set_result_text(text)
+        self.set_state(ok, failure_hint="" if ok else failure_hint)
+
     def reset(self) -> None:
         """运行开始/尚无结果：四个动作全部置灰（不动 lbl_fix 文本）。"""
         self._output = None

@@ -22,33 +22,7 @@ from matplotlib.backends.backend_qtagg import (FigureCanvasQTAgg,
                                                NavigationToolbar2QT)
 from matplotlib.figure import Figure
 from ui import theme
-
-
-#: 占位文字用的中文字体候选（按常见 Windows 环境排序）
-_ZH_FONTS = ("Microsoft YaHei", "微软雅黑", "SimHei", "黑体",
-             "Noto Sans CJK SC", "Source Han Sans SC", "PingFang SC")
-_ZH_FONT_CACHE: list = []          # 只探测一次（字体扫描有成本）
-
-
-def _zh_font_family() -> Optional[str]:
-    """可用的第一个中文字体名；一个都没有返回 ``None``。
-
-    为什么不能只靠 ``font.sans-serif`` 列表：matplotlib **3.11 实测没有逐字形
-    回退**——把中文字体追加进字体链，遇到"尚无图件"这种中文串照样报
-    ``missing from font(s) DejaVu Sans`` 并画出豆腐块。而项目约定是
-    "Arial 优先、图件全英文"，所以只在**确实含中文的文本对象**上单独换字体。
-    """
-    if _ZH_FONT_CACHE:
-        return _ZH_FONT_CACHE[0] or None
-    fam: Optional[str] = None
-    try:
-        from matplotlib import font_manager
-        have = {f.name for f in font_manager.fontManager.ttflist}
-        fam = next((n for n in _ZH_FONTS if n in have), None)
-        _ZH_FONT_CACHE.append(fam or "")
-    except Exception:                                  # noqa: BLE001 —— 探测失败不致命
-        _ZH_FONT_CACHE.append("")
-    return fam
+from ui.widgets.cjk_fonts import cjk_family
 
 
 class MplCanvas(FigureCanvasQTAgg):
@@ -68,7 +42,7 @@ class MplCanvas(FigureCanvasQTAgg):
 
         空画布跟随界面主题底色；载入图件时再换回白底（图件本身是白底产物）。"""
         self.fig.set_facecolor(theme.hexc("surface"))
-        fam = _zh_font_family()
+        fam = cjk_family()
         shown = str(text)
         kwargs = {}
         if any(ord(ch) > 127 for ch in shown):

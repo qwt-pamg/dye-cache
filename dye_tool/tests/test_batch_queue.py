@@ -42,11 +42,12 @@ def test_d10_resolve_out_root_priority_and_absolute(monkeypatch, tmp_path):
 
 
 def test_d10_all_out_root_helpers_agree(monkeypatch, tmp_path):
-    """excel / Φ_Δ / 主页 / 设置页四处 _out_root 与 core.paths 单一实现一致。"""
+    """excel / 页面基类（Φ_Δ、设置页等共用）/ 主页的 out_root 与 core.paths 单一实现一致。"""
     from core import paths
     from core.report.excel_export import _out_root as excel_out_root
-    from ui.pages.phi import PhiPage
+    from ui.pages.base import PageBase
     from ui.pages.home import HomePage
+    from ui.pages.phi import PhiPage
     from ui.pages.settings import SettingsPage
 
     monkeypatch.chdir(tmp_path)
@@ -54,9 +55,10 @@ def test_d10_all_out_root_helpers_agree(monkeypatch, tmp_path):
     want = paths.app_root() / "runs"
     fake = SimpleNamespace(cfg=cfg)
     assert excel_out_root(cfg) == want
-    assert PhiPage._out_root(fake) == want
+    assert PageBase.out_root(fake) == want
+    assert PhiPage.out_root is PageBase.out_root
+    assert SettingsPage.out_root is PageBase.out_root
     assert HomePage._out_root(fake) == want
-    assert SettingsPage._out_root(fake) == want
 
 
 def test_d10_pipeline_make_figure_run_dir_uses_single_source(monkeypatch, tmp_path):

@@ -49,6 +49,7 @@ from core.dyes import (HISTORY_COLUMNS, HISTORY_NAME, is_legacy_run_dir,
 from core.explain import explain_exclusion
 from core.paths import default_out_root
 from ui import theme
+from ui.widgets.cjk_fonts import cjk_family
 
 log = logging.getLogger("dye_tool.ui.dye_library")
 
@@ -66,32 +67,6 @@ DASH = "—"
 TREND_SIZE = (3.25, 2.6)
 TREND_DPI = 110
 
-#: 本页图内可能出现的少量中文（标题 / 占位文字）所需字体。
-#: 与 ``core.plotting.ZH_FONTS`` 同一候选表，但只挂在**本页自家 artist** 上
-#: （见 :func:`_font_prop`），不写全局 rcParams，免得多页互相影响。
-_ZH_FONTS = ["Microsoft YaHei", "SimHei", "PingFang SC", "Noto Sans CJK SC",
-             "Source Han Sans SC", "WenQuanYi Micro Hei", "Arial Unicode MS",
-             "DejaVu Sans"]
-
-
-def _pick_font() -> list[str]:
-    """挑出系统里实际可用的中文字体（都没有时退回 DejaVu Sans，中文会显示为方框）。"""
-    try:
-        from matplotlib import font_manager
-        available = {f.name for f in font_manager.fontManager.ttflist}
-    except Exception:                                    # noqa: BLE001 —— 探测失败不致命
-        return ["DejaVu Sans"]
-    found = [n for n in _ZH_FONTS if n in available]
-    for fallback in ("DejaVu Sans", "Arial"):
-        if fallback in available and fallback not in found:
-            found.append(fallback)
-    return found or ["DejaVu Sans"]
-
-
-#: 进程内只探测一次（字体列表加载有点慢）
-_MPL_FONTS = _pick_font()
-
-
 def _font_prop():
     """本页所有文字共用的 :class:`~matplotlib.font_manager.FontProperties`。
 
@@ -99,7 +74,8 @@ def _font_prop():
     的图（那些图由 ``core.plotting`` 统一管风格）。
     """
     from matplotlib.font_manager import FontProperties
-    return FontProperties(family=_MPL_FONTS)
+    fam = cjk_family()
+    return FontProperties(family=([fam] if fam else []) + ["DejaVu Sans"])
 
 
 # ═══════════════════════════ 纯函数小工具（无 Qt 依赖，便于复用/测试） ═══════════════════════════

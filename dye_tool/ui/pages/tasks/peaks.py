@@ -17,7 +17,6 @@ from PySide6.QtWidgets import QTableWidget
 from PySide6.QtWidgets import QTableWidgetItem
 from PySide6.QtWidgets import QVBoxLayout
 from PySide6.QtWidgets import QWidget
-from core.paths import app_root
 from ui.pages.base import PageBase
 
 log = logging.getLogger("dye_tool.ui.analysis")
@@ -99,11 +98,9 @@ class PeaksPanel(PageBase):
         return 0 if not d.is_dir() else 1
 
     def _choose_dir(self) -> None:
-        start = str((self.cfg.get("gui") or {}).get("last_dir") or app_root())
-        d = QFileDialog.getExistingDirectory(self, "选择光谱目录", start)
+        d = self.pick_dir("选择光谱目录")
         if d:
-            self.remember_dir(Path(d))
-            self.set_data_dir(Path(d))
+            self.set_data_dir(d)
 
     def _run(self) -> None:
         from core.analysis.peaks import find_peaks_spectrum, peak_rows

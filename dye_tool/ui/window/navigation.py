@@ -27,30 +27,18 @@ class MainWindowNavMixin:
             self._sync_settings_page(True)
         self._nav_current = key
         self.stack.setCurrentWidget(page)
-        hook = getattr(page, "on_activated", None)
-        if callable(hook):
-            try:
-                hook()
-            except Exception:                              # noqa: BLE001
-                pass
-        refresh = getattr(self, "_refresh_help", None)
-        if callable(refresh):
-            try:
-                from PySide6.QtCore import QTimer
-                QTimer.singleShot(0, lambda p=page: refresh(p))
-            except Exception:
-                pass
-        if key == "archive" and hasattr(self.archive_page, "reload"):
-            try:
+        # 切页后的刷新失败不能让导航失灵，但要留下记录
+        try:
+            if callable(getattr(page, "on_activated", None)):
+                page.on_activated()
+            if key == "archive":
                 self.archive_page.reload()
-            except Exception:                              # noqa: BLE001
-                pass
-        if key == "home":
-            try:
+            elif key == "home":
                 self.home_page.cfg = self.cfg
                 self.home_page.refresh()
-            except Exception:                              # noqa: BLE001
-                pass
+        except Exception:                                  # noqa: BLE001
+            log.exception("切到「%s」后刷新页面失败", key)
+        QTimer.singleShot(0, lambda p=page: self._refresh_help(p))
 
     # ══════════════ V2.6 FR-40.3：快捷键可发现性 ══════════════
     def _init_nav_shortcuts(self) -> None:

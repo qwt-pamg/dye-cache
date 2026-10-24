@@ -120,7 +120,9 @@ class PageBase(QWidget):
 
     # ══════════════ 目录 / 配置 ══════════════
     def pick_dir(self, title: str = "选择数据目录") -> Optional[Path]:
-        start = str(self.cfg.get("gui", {}).get("last_dir") or PROJECT_ROOT)
+        """目录选择框：从本页当前目录 → 最近目录 → 程序目录依次取起点；选中即记入最近。"""
+        start = str(getattr(self, "data_dir", None)
+                    or (self.cfg.get("gui") or {}).get("last_dir") or PROJECT_ROOT)
         d = QFileDialog.getExistingDirectory(self, title, start)
         if not d:
             return None
@@ -142,6 +144,32 @@ class PageBase(QWidget):
         recents.insert(0, str(p))
         gui["recent_dirs"] = recents[:int(gui.get("max_recent", 8))]
         gui["last_dir"] = str(p)
+
+    def out_root(self) -> Path:
+        """输出根目录（唯一解析在 :func:`core.paths.resolve_out_root`）。"""
+        from core.paths import resolve_out_root
+        return resolve_out_root(self.cfg)
+
+    # ══════════════ 拖入目录 ══════════════
+    def dragEnterEvent(self, e) -> None:               # noqa: N802 —— Qt 接口
+        if e.mimeData().hasUrls():
+            e.acceptProposedAction()
+
+    def dropEvent(self, e) -> None:                    # noqa: N802 —— Qt 接口
+        """拖入目录（拖入文件按其所在目录）→ :meth:`on_dir_dropped`。
+
+        页面需自己 ``setAcceptDrops(True)``；要按文件处理的页面（如光谱作图页）
+        覆盖本方法即可。
+        """
+        urls = [Path(u.toLocalFile()) for u in e.mimeData().urls()]
+        dirs = [p for p in urls if p.is_dir()]
+        target = dirs[0] if dirs else (urls[0].parent if urls else None)
+        if target is not None:
+            self.on_dir_dropped(target)
+        e.acceptProposedAction()
+
+    def on_dir_dropped(self, d: Path) -> None:
+        """子类覆盖：接收拖入的数据目录。"""
 
     @staticmethod
     def config_path() -> Path:

@@ -293,12 +293,7 @@ class MainWindow(QMainWindow, MainWindowNavMixin, MainWindowActionsMixin):
         self.stack_page = StackPage(self.cfg)
         self.spectra_page = SpectraPage(self.cfg)
         # V2.6 FR-41.5：「在分析页记录」→ 与 flow 同一桥接（经典布局仅提示）
-        _rec = getattr(self.spectra_page, "record_pair_requested", None)
-        if _rec is not None:
-            try:
-                _rec.connect(self._on_record_pair_requested)
-            except Exception:                          # noqa: BLE001
-                pass
+        self.spectra_page.record_pair_requested.connect(self._on_record_pair_requested)
         # V2.6 FR-40.6：样式面板「重置全部」→ live_plot.clear_styles()
         self._wire_style_panel(self.stack_page)
         self._wire_style_panel(self.spectra_page)
@@ -314,12 +309,7 @@ class MainWindow(QMainWindow, MainWindowNavMixin, MainWindowActionsMixin):
         # Φ_Δ 过期横幅）。此前只有 flow 布局连接 → classic 下信号断链：cfg 仍写、
         # 日志仍报成功，但广播/横幅不出现。
         for page in (self.stack_page, self.spectra_page):
-            _sig = getattr(page, "plot_params_written", None)
-            if _sig is not None:
-                try:
-                    _sig.connect(self._on_plot_params_written)
-                except Exception:                      # noqa: BLE001
-                    pass
+            page.plot_params_written.connect(self._on_plot_params_written)
         # A 道 FR-23：经典布局显式关闭组页签（V1.x 外观一字不变）
         self.phi_page.set_group_tabs(False)
         titles = ["① 单线态氧（k_obs → Φ_Δ）", "② 堆叠/叠加图", "③ 紫外/荧光作图"]
@@ -358,12 +348,7 @@ class MainWindow(QMainWindow, MainWindowNavMixin, MainWindowActionsMixin):
         # V2.5 FR-33.3：工作台「写入出图参数」→ 广播 cfg + Φ_Δ 过期横幅
         for _pg in (self.plot_page.uv_stack, self.plot_page.uv_overlay,
                     self.plot_page.fluor):
-            _sig = getattr(_pg, "plot_params_written", None)
-            if _sig is not None:
-                try:
-                    _sig.connect(self._on_plot_params_written)
-                except Exception:                          # noqa: BLE001
-                    pass
+            _pg.plot_params_written.connect(self._on_plot_params_written)
         # 它们也要进 pages：关闭时统一 shutdown、菜单"打开结果"可遍历
         self.pages.extend([self.plot_page.uv_overlay, self.plot_page.uv_stack,
                            self.plot_page.fluor])
@@ -380,27 +365,14 @@ class MainWindow(QMainWindow, MainWindowNavMixin, MainWindowActionsMixin):
         self.stack = QStackedWidget()
         for page in self.flow_pages.values():
             self.stack.addWidget(page)
-        # 壳页的信号接到主窗口（与 classic 布局一致）
-        for page in (self.data_page, self.settings_page):
-            for sig in ("logged", "status", "progress"):
-                try:
-                    getattr(page, sig).connect(getattr(self, "on_" + sig))
-                except Exception:                          # noqa: BLE001
-                    pass
-        for page in (self.analysis_page, self.plot_page):
-            for sig in ("logged", "status", "progress"):
-                try:
-                    getattr(page, sig).connect(getattr(self, "on_" + sig))
-                except Exception:                          # noqa: BLE001
-                    pass
+        # 导航页的日志/状态/进度接到主窗口（与 classic 布局一致）
+        for page in (self.data_page, self.settings_page, self.analysis_page, self.plot_page):
+            page.logged.connect(self.on_logged)
+            page.status.connect(self.on_status)
+            page.progress.connect(self.on_progress)
         # V2.6 FR-41.5：③作图台「在分析页记录」→ ②Stokes 测量卡预填（仅光谱页）
         for _pg in (self.plot_page.uv_overlay, self.plot_page.fluor):
-            _rec = getattr(_pg, "record_pair_requested", None)
-            if _rec is not None:
-                try:
-                    _rec.connect(self._on_record_pair_requested)
-                except Exception:                      # noqa: BLE001
-                    pass
+            _pg.record_pair_requested.connect(self._on_record_pair_requested)
         # V2.6 FR-40.6：样式面板「重置全部」→ 页面 live_plot.clear_styles()
         for _pg in (self.plot_page.uv_stack, self.plot_page.uv_overlay,
                     self.plot_page.fluor):

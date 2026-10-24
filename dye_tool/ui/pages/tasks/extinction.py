@@ -9,7 +9,6 @@ from typing import Optional
 from PySide6.QtCore import Qt
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QAbstractItemView
-from PySide6.QtWidgets import QFileDialog
 from PySide6.QtWidgets import QHBoxLayout
 from PySide6.QtWidgets import QHeaderView
 from PySide6.QtWidgets import QLabel
@@ -160,11 +159,9 @@ class ExtinctionPanel(PageBase):
         return len(self._files)
 
     def _choose_dir(self) -> None:
-        start = str((self.cfg.get("gui") or {}).get("last_dir") or app_root())
-        d = QFileDialog.getExistingDirectory(self, "选择光谱目录", start)
+        d = self.pick_dir("选择光谱目录")
         if d:
-            self.remember_dir(Path(d))
-            self.set_data_dir(Path(d), force=True)
+            self.set_data_dir(d, force=True)
 
     # ── 校验（FR-39.2：空/非数值/负数 → 单元格高亮 + 中文状态提示，不阻塞编辑） ──
     @staticmethod
@@ -313,13 +310,8 @@ class ExtinctionPanel(PageBase):
             self._last_result_text = text
             self._last_output = p
             self.view.setPlainText(text)
-            self.actions.set_output(p if ok else None)
-            self.actions.set_result_text(text)
-            if ok:
-                self.actions.set_state(True)
-            else:
-                self.actions.set_state(False,
-                                       failure_hint=self._failure_hint(result))
+            self.actions.show_result(ok, output=p, text=text,
+                                     failure_hint=self._failure_hint(result))
         except Exception as err:                       # noqa: BLE001
             log.warning("ε 结果区动作条刷新失败：%s", err)
         self._done(res)                                # 既有钩子（测试/日志复用）

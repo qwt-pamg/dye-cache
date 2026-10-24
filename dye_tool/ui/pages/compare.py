@@ -278,22 +278,12 @@ class ComparePage(PageBase):
         if d:
             self._load_dir(d)
 
-    def dragEnterEvent(self, e) -> None:               # noqa: N802
-        if e.mimeData().hasUrls():
-            e.acceptProposedAction()
-
-    def dropEvent(self, e) -> None:                    # noqa: N802
-        urls = [Path(u.toLocalFile()) for u in e.mimeData().urls()]
-        dirs = [p for p in urls if p.is_dir()]
-        if dirs:
-            self._load_dir(dirs[0])
-        elif urls:
-            self._load_dir(urls[0].parent)
-        e.acceptProposedAction()
-
     def _ag(self) -> dict:
         return {"core_lo": self.sp_lo.value(), "core_hi": self.sp_hi.value(),
                 "step": self.sp_step.value(), "d_max": self.sp_dmax.value()}
+
+    def on_dir_dropped(self, d: Path) -> None:
+        self._load_dir(d)
 
     def _load_dir(self, d: Path) -> None:
         self.data_dir = Path(d)
@@ -608,13 +598,8 @@ class ComparePage(PageBase):
             text = self._format_compare_lines(res)
             self._last_output = out_dir or None
             self._last_result_text = text
-            self.actions.set_output(self._last_output if ok else None)
-            self.actions.set_result_text(text)
-            if ok:
-                self.actions.set_state(True)
-            else:
-                self.actions.set_state(False,
-                                       failure_hint=self._failure_hint(res))
+            self.actions.show_result(ok, output=self._last_output, text=text,
+                                     failure_hint=self._failure_hint(res))
         except Exception as err:                       # noqa: BLE001 —— 动作条不得废页
             self.logged.emit("WARNING", f"对比结果区动作条刷新失败：{err}")
         self._on_done_compare(res)
@@ -654,12 +639,9 @@ class ComparePage(PageBase):
         text = self._format_workbench_lines(res)
         self._last_output = out or None
         self._last_result_text = text
-        self.actions.set_output(self._last_output if ok else None)
-        self.actions.set_result_text(text)
-        if ok:
-            self.actions.set_state(True)
-        else:
-            self.actions.set_state(False, failure_hint=("如何修复：" + str(getattr(res, "message", "") or "工作台失败")))
+        self.actions.show_result(ok, output=self._last_output, text=text,
+                                 failure_hint="如何修复：" + str(getattr(res, "message", "")
+                                                              or "工作台失败"))
         self._fill_result_table(getattr(res, "rows", []) or [])
         if out:
             self.export.set_run_dir(out)

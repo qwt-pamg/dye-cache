@@ -19,9 +19,7 @@ from pathlib import Path
 from typing import Optional
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import (QCheckBox, QComboBox, QFileDialog,
-                               QHBoxLayout, QLabel, QPushButton, QSplitter,
-                               QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QHBoxLayout, QLabel, QPushButton, QSplitter, QVBoxLayout, QWidget)
 
 from core.paths import app_root
 from ui.pages.base import PageBase
@@ -174,25 +172,15 @@ class DataPage(PageBase):
         self.files.selection_changed.connect(self._on_selection)
 
     # ── V2.3 FR-24.3：拖入目录/文件 → 载入（与 Φ_Δ/对比/作图页同口径） ──
-    def dragEnterEvent(self, e) -> None:               # noqa: N802 —— Qt 接口
-        if e.mimeData().hasUrls():
-            e.acceptProposedAction()
-
-    def dropEvent(self, e) -> None:                    # noqa: N802 —— Qt 接口
-        urls = [Path(u.toLocalFile()) for u in e.mimeData().urls()]
-        dirs = [p for p in urls if p.is_dir()]
-        if dirs:
-            self.load_dir(dirs[0])
-        elif urls:
-            self.load_dir(urls[0].parent)
-        e.acceptProposedAction()
 
     # ══════════════ 载入 ══════════════
     def _choose_dir(self) -> None:
-        start = str((self.cfg.get("gui") or {}).get("last_dir") or app_root())
-        d = QFileDialog.getExistingDirectory(self, "选择数据目录", start)
+        d = self.pick_dir()
         if d:
-            self.load_dir(Path(d))
+            self.load_dir(d)
+
+    def on_dir_dropped(self, d: Path) -> None:
+        self.load_dir(d)
 
     def load_dir(self, d: Optional[Path]) -> None:
         """载入目录（后台解析）；``None`` = 无操作。"""

@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Optional
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QAbstractItemView
-from PySide6.QtWidgets import QFileDialog
 from PySide6.QtWidgets import QHBoxLayout
 from PySide6.QtWidgets import QHeaderView
 from PySide6.QtWidgets import QLabel
@@ -107,11 +106,9 @@ class WavelengthPanel(PageBase):
         self.set_wavelengths(self.DEFAULT_WAVELENGTHS)
 
     def _choose_dir(self) -> None:
-        start = str((self.cfg.get("gui") or {}).get("last_dir") or app_root())
-        d = QFileDialog.getExistingDirectory(self, "选择光谱目录", start)
+        d = self.pick_dir("选择光谱目录")
         if d:
-            self.data_dir = Path(d)
-            self.remember_dir(self.data_dir)
+            self.data_dir = d
 
     # ── 行编辑 / 校验（FR-39.3） ──
     @staticmethod
@@ -302,13 +299,8 @@ class WavelengthPanel(PageBase):
             self._last_result_text = text
             self._last_output = p
             self.view.setPlainText(text)
-            self.actions.set_output(p if ok else None)
-            self.actions.set_result_text(text)
-            if ok:
-                self.actions.set_state(True)
-            else:
-                self.actions.set_state(False,
-                                       failure_hint=self._failure_hint(tab))
+            self.actions.show_result(ok, output=p, text=text,
+                                     failure_hint=self._failure_hint(tab))
         except Exception as err:                       # noqa: BLE001
             log.warning("A@λ 结果区动作条刷新失败：%s", err)
         self._done(res)                                # 既有钩子（测试/日志复用）

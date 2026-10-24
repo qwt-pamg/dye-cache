@@ -29,7 +29,6 @@ import numpy as np
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (QHBoxLayout, QLabel, QVBoxLayout, QWidget)
 
-from matplotlib import font_manager
 from matplotlib.backends.backend_qtagg import (FigureCanvasQTAgg,
                                                NavigationToolbar2QT)
 from matplotlib.colors import is_color_like, to_hex
@@ -38,6 +37,7 @@ from matplotlib.font_manager import FontProperties
 from matplotlib.lines import Line2D
 from matplotlib.patches import Rectangle
 from ui import theme
+from ui.widgets.cjk_fonts import cjk_font_path
 
 #: 工作视图提示（UI 明示"不等于定稿产物"）
 WORK_VIEW_HINT = "工作视图：可缩放、读数、调样式，但不是定稿图；定稿请点「生成定稿图」"
@@ -51,38 +51,9 @@ DEFAULT_STYLE = {
     "markersize": 4.0,
 }
 
-#: CJK 字体候选（按顺序回退；V25-B1：活画布中文标题/轴标签/标注缺字形）
-CJK_FONT_CANDIDATES = ("Microsoft YaHei", "SimHei", "Noto Sans CJK SC",
-                       "Noto Sans SC", "Source Han Sans SC",
-                       "WenQuanYi Zen Hei")
-
-#: {resolved: bool, path: Optional[str]} —— findfont 只做一次（字体缓存较慢）
-_cjk_path_cache: dict = {"resolved": False, "path": None}
-
-
-def _cjk_font_path() -> Optional[str]:
-    """找一款可用 CJK 字体文件；找不到返回 None（结果缓存，不抛异常）。"""
-    if _cjk_path_cache["resolved"]:
-        return _cjk_path_cache["path"]
-    _cjk_path_cache["resolved"] = True
-    for name in CJK_FONT_CANDIDATES:
-        try:
-            path = font_manager.findfont(
-                FontProperties(family=name), fallback_to_default=False)
-        except Exception:                              # noqa: BLE001 —— 没装这款
-            continue
-        try:
-            if path and Path(path).is_file():
-                _cjk_path_cache["path"] = str(path)
-                break
-        except OSError:                                # pragma: no cover
-            continue
-    return _cjk_path_cache["path"]
-
-
 def has_cjk_font() -> bool:
     """当前环境是否有可用 CJK 字体（没有 → 页面应退英文标签；V25-B1）。"""
-    return _cjk_font_path() is not None
+    return cjk_font_path() is not None
 
 
 def label_text(zh: str, en: str) -> str:
@@ -92,7 +63,7 @@ def label_text(zh: str, en: str) -> str:
 
 def _cjk_font(size: Optional[float] = None) -> Optional[FontProperties]:
     """CJK 字体属性（找不到字体返回 None；size=None 用 matplotlib 默认）。"""
-    path = _cjk_font_path()
+    path = cjk_font_path()
     if not path:
         return None
     fp = FontProperties(fname=path)

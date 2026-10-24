@@ -23,7 +23,6 @@ from PySide6.QtWidgets import QTableWidget
 from PySide6.QtWidgets import QTableWidgetItem
 from PySide6.QtWidgets import QVBoxLayout
 from PySide6.QtWidgets import QWidget
-from core.paths import app_root
 from core.paths import resolve_out_root
 from core.report.stokes_table import STOKES_COLUMNS
 from core.report.stokes_table import default_stokes_name
@@ -240,12 +239,9 @@ class StokesPanel(PageBase):
                       busy_widgets=[self.btn_dir, self.lst_abs, self.lst_em])
 
     def _choose_dir(self) -> None:
-        start = str(self.data_dir or (self.cfg.get("gui") or {}).get("last_dir")
-                    or app_root())
-        d = QFileDialog.getExistingDirectory(self, "选择光谱目录", start)
+        d = self.pick_dir("选择光谱目录")
         if d:
-            self.remember_dir(Path(d))
-            self.set_data_dir(Path(d), force=True)
+            self.set_data_dir(d, force=True)
 
     def _on_loaded(self, spectra) -> None:
         had_old = bool(self.spectra)

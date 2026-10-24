@@ -406,15 +406,8 @@ class StackPage(PageBase):
         if d:
             self._load_dir(d)
 
-    def dragEnterEvent(self, e) -> None:               # noqa: N802
-        if e.mimeData().hasUrls():
-            e.acceptProposedAction()
-
-    def dropEvent(self, e) -> None:                    # noqa: N802
-        urls = [Path(u.toLocalFile()) for u in e.mimeData().urls()]
-        dirs = [p for p in urls if p.is_dir()]
-        self._load_dir(dirs[0] if dirs else (urls[0].parent if urls else None))
-        e.acceptProposedAction()
+    def on_dir_dropped(self, d: Path) -> None:
+        self._load_dir(d)
 
     def _load_dir(self, d: Optional[Path],
                   recursive: Optional[bool] = None,
