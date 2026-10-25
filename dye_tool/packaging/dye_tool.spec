@@ -13,9 +13,10 @@ ROOT = Path(SPECPATH).resolve().parent          # noqa: F821 —— PyInstaller 
 
 datas = [
     (str(ROOT / "config.yaml"), "."),            # 默认用户配置
-    (str(ROOT / "README.md"), "."),              # 使用说明
 ]
-# 样例数据不进入公开仓库；本地存在时可选打包。
+# 使用说明/样例数据不进入公开仓库；本地存在时可选打包。
+if (ROOT / "README.md").is_file():
+    datas.append((str(ROOT / "README.md"), "."))
 if (ROOT / "samples").is_dir():
     datas.append((str(ROOT / "samples"), "samples"))
 # 中文字体相关的可选资源（若存在一并打包，缺失不影响运行）

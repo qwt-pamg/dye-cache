@@ -96,7 +96,9 @@ if (Test-Path $Exe) {
     # 把用户可见的文件放到 exe 同级（PyInstaller one-folder 默认塞进 _internal）
     $OutDir = Join-Path $Root "dist\dye_tool"
     Copy-Item (Join-Path $Root "config.yaml") $OutDir -Force
-    Copy-Item (Join-Path $Root "README.md")   $OutDir -Force
+    if (Test-Path (Join-Path $Root "README.md")) {
+        Copy-Item (Join-Path $Root "README.md") $OutDir -Force
+    }
     # V2.9 FR-59 甲：随包 QUICKSTART（三步上手/命名建议/剔除原因/CLI 示例）
     Copy-Item (Join-Path $Root "packaging\QUICKSTART.txt") $OutDir -Force
     # 公开仓库不携带实验样例数据；若本地存在 samples/ 才随包分发。
