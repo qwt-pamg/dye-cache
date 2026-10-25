@@ -19,6 +19,7 @@ from __future__ import annotations
 import logging
 import os
 import sys
+import time
 import traceback
 from pathlib import Path
 
@@ -29,6 +30,13 @@ if str(ROOT) not in sys.path:
 
 from core import VERSION                                          # noqa: E402
 from core.config import load_config                               # noqa: E402
+from core.runtime_log import (                                     # noqa: E402
+    event as runtime_event,
+    exception as runtime_exception,
+    path as runtime_log_path,
+    start_runtime_log,
+    startup_phase,
+)
 from core.paths import app_root, config_path                      # noqa: E402
 from core.results import setup_logging                            # noqa: E402
 
@@ -373,6 +381,10 @@ def _install_excepthook(app=None) -> None:
         detail = "".join(traceback.format_exception(exc_type, exc, tb))
         log.error("未捕获异常: %s", exc)
         try:
+            runtime_exception("uncaught_exception", exc)
+        except Exception:                             # noqa: BLE001
+            pass
+        try:
             ErrorDialog(f"{exc_type.__name__}: {exc}", detail).exec()
         except Exception:                             # noqa: BLE001
             QMessageBox.critical(None, "严重错误", detail)
@@ -404,62 +416,123 @@ def _prepare_frozen_streams() -> None:
         sys.stderr = logf
 
 
+def _attach_runtime_logging() -> None:
+    """Also send Python logging records to the public runtime log."""
+    try:
+        fh = logging.FileHandler(runtime_log_path(), encoding="utf-8")
+        fh.setLevel(logging.DEBUG)
+        fh.setFormatter(logging.Formatter(
+            "%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
+        logging.getLogger("dye_tool").addHandler(fh)
+    except Exception as err:                            # noqa: BLE001
+        runtime_event("runtime_log_handler_failed", error=err)
+
+
+_QT_MESSAGE_HANDLER = None
+
+
+def _install_qt_message_handler() -> None:
+    """Capture Qt warnings/errors into the same runtime log."""
+    global _QT_MESSAGE_HANDLER
+    try:
+        from PySide6.QtCore import qInstallMessageHandler
+
+        def handler(mode, context, message):
+            try:
+                runtime_event("qt_message", level=str(mode), message=message)
+            except Exception:
+                pass
+
+        _QT_MESSAGE_HANDLER = handler
+        qInstallMessageHandler(handler)
+    except Exception as err:                            # noqa: BLE001
+        runtime_event("qt_handler_failed", error=err)
+
+
 # ═══════════════════════════ GUI ═══════════════════════════
 def main(argv=None) -> int:
     """应用入口：优先处理无界面子命令，否则启动 GUI。"""
     argv = list(sys.argv[1:] if argv is None else argv)
-    _prepare_frozen_streams()
-    # P2 多进程出图的**必需**前置：打包成 exe 后（Windows spawn）子进程会重新执行
-    # 本可执行文件，必须靠 freeze_support 把"子进程启动"接管过来；否则会反复重启
-    # 自身（开发环境下它是无害的 no-op）。
+    t0 = time.perf_counter()
+    rlog = start_runtime_log()
+    runtime_event("app_start", version=VERSION, pid=os.getpid(),
+                  frozen=getattr(sys, "frozen", False), argv=argv,
+                  runtime_log=rlog)
+    startup_phase("begin", t0)
     try:
-        import multiprocessing
-        multiprocessing.freeze_support()
-    except Exception:                                  # noqa: BLE001
-        pass
-
-    code = run_headless(argv)
-    if code is not None:
-        return code
-
-    # Qt 高 DPI 与缩放（须在 QApplication 之前设置）
-    os.environ.setdefault("QT_ENABLE_HIGHDPI_SCALING", "1")
-    # 无显示环境（CI/远程）下允许离屏运行，便于自动化验收
-    if os.environ.get("DYE_TOOL_OFFSCREEN") == "1":
-        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-
-    from PySide6.QtWidgets import QApplication
-    app = QApplication([sys.argv[0]] + argv)
-    app.setApplicationName("dye_tool")
-    app.setApplicationVersion(VERSION)
-    app.setOrganizationName("Photochemistry Dye Lab")
-    _install_excepthook(app)
-
-    # 日志：控制台 + 供 UI 使用的根 logger（GUI 内的日志区另有通道）
-    setup_logging(None, debug=os.environ.get("DYE_TOOL_DEBUG") == "1")
-
-    # 用户配置：打包后位于 exe 同级目录（可写），开发时为项目根
-    cfgp = config_path()
-    cfg = load_config(cfgp if cfgp.exists() else None)
-    if not cfgp.exists():
-        # 首次运行：把 exe 同级的默认配置固化下来，方便用户直接编辑
+        _prepare_frozen_streams()
+        startup_phase("frozen_streams", t0)
+        # P2 多进程出图的**必需**前置：打包成 exe 后（Windows spawn）子进程会重新执行
+        # 本可执行文件，必须靠 freeze_support 把"子进程启动"接管过来；否则会反复重启
+        # 自身（开发环境下它是无害的 no-op）。
         try:
-            from core.config import save_config
-            save_config(cfg, cfgp)
-        except Exception as err:                      # noqa: BLE001
-            log.warning("首次写出默认配置失败: %s", err)
+            import multiprocessing
+            multiprocessing.freeze_support()
+        except Exception:                              # noqa: BLE001
+            pass
+        startup_phase("freeze_support", t0)
 
-    from ui.window.main_window import MainWindow
-    win = MainWindow(cfg)
-    win.show()
-    log.info("dye_tool v%s 界面已启动 (frozen=%s)", VERSION,
-             getattr(sys, "frozen", False))
+        code = run_headless(argv)
+        if code is not None:
+            runtime_event("headless_exit", code=code)
+            return code
+        startup_phase("headless_check", t0)
 
-    if os.environ.get("DYE_TOOL_SMOKE") == "1":
-        # 冒烟模式：构建并显示后自动退出（自动化验收用）
-        from PySide6.QtCore import QTimer
-        QTimer.singleShot(300, app.quit)
-    return app.exec()
+        # Qt 高 DPI 与缩放（须在 QApplication 之前设置）
+        os.environ.setdefault("QT_ENABLE_HIGHDPI_SCALING", "1")
+        # 无显示环境（CI/远程）下允许离屏运行，便于自动化验收
+        if os.environ.get("DYE_TOOL_OFFSCREEN") == "1":
+            os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+        from PySide6.QtWidgets import QApplication
+        app = QApplication([sys.argv[0]] + argv)
+        startup_phase("qapplication", t0)
+        app.setApplicationName("dye_tool")
+        app.setApplicationVersion(VERSION)
+        app.setOrganizationName("Photochemistry Dye Lab")
+        _install_excepthook(app)
+        _install_qt_message_handler()
+        startup_phase("qt_hooks", t0)
+
+        # 日志：控制台 + 供 UI 使用的根 logger（GUI 内的日志区另有通道）
+        setup_logging(None, debug=os.environ.get("DYE_TOOL_DEBUG") == "1")
+        _attach_runtime_logging()
+
+        # 用户配置：打包后位于 exe 同级目录（可写），开发时为项目根
+        cfgp = config_path()
+        cfg = load_config(cfgp if cfgp.exists() else None)
+        startup_phase("config", t0)
+        if not cfgp.exists():
+            # 首次运行：把 exe 同级的默认配置固化下来，方便用户直接编辑
+            try:
+                from core.config import save_config
+                save_config(cfg, cfgp)
+            except Exception as err:                  # noqa: BLE001
+                log.warning("首次写出默认配置失败: %s", err)
+
+        from ui.window.main_window import MainWindow
+        startup_phase("import_main_window", t0)
+        try:
+            win = MainWindow(cfg)
+        except Exception as exc:                      # noqa: BLE001
+            runtime_exception("MainWindow_init", exc)
+            raise
+        startup_phase("main_window_constructed", t0)
+        win.show()
+        startup_phase("window_shown", t0)
+        log.info("dye_tool v%s 界面已启动 (frozen=%s)", VERSION,
+                 getattr(sys, "frozen", False))
+
+        if os.environ.get("DYE_TOOL_SMOKE") == "1":
+            # 冒烟模式：构建并显示后自动退出（自动化验收用）
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(300, app.quit)
+        rc = app.exec()
+        runtime_event("app_exec_returned", code=rc)
+        return rc
+    except BaseException as exc:                      # noqa: BLE001
+        runtime_exception("main", exc)
+        raise
 
 
 if __name__ == "__main__":

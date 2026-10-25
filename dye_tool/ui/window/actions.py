@@ -522,6 +522,11 @@ class MainWindowActionsMixin:
 
         现在对两个线程一视同仁：cancel + **有界** wait（不能无限等，否则关不掉窗口）。
         """
+        try:
+            from core.runtime_log import event as _rt_event
+            _rt_event("window_close_begin", layout=self.layout_mode)
+        except Exception:
+            pass
         # S2（V2.x 审查）：flow 布局下**遍历全部壳页**（原来手写 data/settings，
         # 漏了 analysis_page —— 它的 ε/A@λ 面板是 PageBase 子类、跑 Job 时不被 cancel）。
         # 有 shutdown 的调，没有的跳过（home/archive/plot 是纯展示壳）。
@@ -564,4 +569,9 @@ class MainWindowActionsMixin:
                 _shutil.rmtree(Path(demo).parent, ignore_errors=True)
             except OSError:
                 pass
+        try:
+            from core.runtime_log import event as _rt_event
+            _rt_event("window_close_end", targets=getattr(self, "_shutdown_targets", []))
+        except Exception:
+            pass
         super().closeEvent(e)

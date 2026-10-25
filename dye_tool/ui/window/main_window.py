@@ -82,12 +82,27 @@ class MainWindow(QMainWindow, MainWindowNavMixin, MainWindowActionsMixin):
         ⚠ 冒烟/自动化模式（``DYE_TOOL_SMOKE=1``，见 app.py 与验收 A5.4/A9）下
         **绝不弹任何模态对话框**——弹窗会阻塞事件循环、让进程永远退不出去。
         """
+        try:
+            from core.runtime_log import event as _rt_event
+            _rt_event("startup_checks_begin")
+        except Exception:
+            pass
         self._warmup()
         if os.environ.get("DYE_TOOL_SMOKE") == "1":
+            try:
+                from core.runtime_log import event as _rt_event
+                _rt_event("startup_checks_done", smoke=True)
+            except Exception:
+                pass
             return
         self._report_cfg_issues()
         if bool((self.cfg.get("gui") or {}).get("show_welcome", True)):
             self._show_welcome()
+        try:
+            from core.runtime_log import event as _rt_event
+            _rt_event("startup_checks_done", smoke=False)
+        except Exception:
+            pass
 
     def _warmup(self) -> None:
         """后台预热 matplotlib 与字体缓存（FR-6.3）：首图不再卡在按钮之后。"""
@@ -152,9 +167,26 @@ class MainWindow(QMainWindow, MainWindowNavMixin, MainWindowActionsMixin):
         btn_demo = box.addButton("一键跑通演示数据", QMessageBox.ActionRole)
         btn_open = box.addButton("直接选数据目录", QMessageBox.ActionRole)
         btn_close = box.addButton("知道了", QMessageBox.AcceptRole)
-        box.setCheckBox(QCheckBox("不再显示这个提示"))
+        # 必须保留 Python 引用：直接 box.setCheckBox(QCheckBox(...)) 会让临时
+        # QCheckBox 立即被 GC，QMessageBox 内部留成悬空指针；对话框关闭后
+        # box.checkBox().isChecked() 会触发 access violation（实测闪退）。
+        chk = QCheckBox("不再显示这个提示")
+        box.setCheckBox(chk)
+        try:
+            from core.runtime_log import event as _rt_event
+            _rt_event("welcome_shown")
+        except Exception:
+            pass
         box.exec()
-        if box.checkBox() is not None and box.checkBox().isChecked():
+        try:
+            from core.runtime_log import event as _rt_event
+            _btn = box.clickedButton()
+            _rt_event("welcome_closed",
+                      clicked=str(_btn.text()) if _btn else "none",
+                      dont_show=chk.isChecked())
+        except Exception:
+            pass
+        if chk.isChecked():
             self.cfg.setdefault("gui", {})["show_welcome"] = False
             self._save_cfg()
         clicked = box.clickedButton()
