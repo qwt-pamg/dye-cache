@@ -19,6 +19,7 @@ from __future__ import annotations
 import logging
 import os
 import sys
+import time
 import traceback
 from pathlib import Path
 
@@ -29,6 +30,13 @@ if str(ROOT) not in sys.path:
 
 from core import VERSION                                          # noqa: E402
 from core.config import load_config                               # noqa: E402
+from core.runtime_log import (                                     # noqa: E402
+    event as runtime_event,
+    exception as runtime_exception,
+    path as runtime_log_path,
+    start_runtime_log,
+    startup_phase,
+)
 from core.paths import app_root, config_path                      # noqa: E402
 from core.results import setup_logging                            # noqa: E402
 
@@ -123,6 +131,14 @@ def run_headless(argv: list[str]) -> int | None:
 
 
 # ═══════════════════════════ 冻结产物 GUI 冒烟（P3 的验证门） ═══════════════════════════
+
+def _smoke_tmp_root() -> Path:
+    """门自检的临时根目录：程序目录下的 ``.preview_tmp``（可用 ``DYE_TOOL_PREVIEW_ROOT``
+    改到别处），不用系统临时目录——维护者要求不往系统盘写临时文件。"""
+    root = Path(os.environ.get("DYE_TOOL_PREVIEW_ROOT") or (app_root() / ".preview_tmp"))
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
 def _gui_smoke(argv: list[str]) -> int:
     """离屏构建主窗口并跑一条精简流水线，用于**验证打包产物里 Qt/matplotlib 模块齐备**。
 
@@ -176,7 +192,7 @@ def _gui_smoke(argv: list[str]) -> int:
 
     def _window():
         from core.config import default_config
-        from ui.main_window import MainWindow
+        from ui.window.main_window import MainWindow
         w = MainWindow(default_config())
         w.show()
         for _ in range(10):
@@ -239,7 +255,7 @@ def _gui_smoke(argv: list[str]) -> int:
         svg = ('<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32">'
                '<rect width="32" height="32" fill="#C81E1E"/></svg>')
         with tempfile.NamedTemporaryFile("w", suffix=".svg", delete=False,
-                                         encoding="utf-8") as fh:
+                                         encoding="utf-8", dir=str(_smoke_tmp_root())) as fh:
             fh.write(svg)
             path = fh.name
         try:
@@ -263,8 +279,9 @@ def _gui_smoke(argv: list[str]) -> int:
     # ── L3（评审记录）：门的产物必须落在**临时目录**，不能污染交付目录 ──
     # 原先 out_root = exe 同级 runs_gui_smoke：每跑一次门就在交付目录里新建一个
     # 完整 run（results.csv + xlsx + 8 张 png），反复跑持续膨胀。
+    # 临时目录用程序目录下的 .preview_tmp（不写系统盘 %TEMP%，结束即删）。
     import tempfile
-    smoke_dir = Path(tempfile.mkdtemp(prefix="dye_gui_smoke_"))
+    smoke_dir = Path(tempfile.mkdtemp(prefix="dye_gui_smoke_", dir=str(_smoke_tmp_root())))
 
     def _pipeline():
         from core.config import default_config
@@ -303,7 +320,7 @@ def _gui_smoke(argv: list[str]) -> int:
         assert n > 0, "批次工作区没有载入任何文件"
         assert w.goto("analysis"), "导航到 ② 分析 失败"
         assert w.analysis_page.current_key() == "phi", "分析页默认任务应为 Φ_Δ"
-        badge = w.nav.list.item(1).text()
+        badge = w.nav.badge("data")
         assert str(n) in badge, f"导航徽标没更新：{badge!r}"
         return f"{n} 个文件 / 徽标 {badge!r}"
     step("任务流壳（批次载入 + 导航 + 徽标）", _batch_flow)
@@ -355,7 +372,7 @@ def _write_smoke(lines: list[str], ok: bool, argv: list[str]) -> int:
 def _install_excepthook(app=None) -> None:
     """任何未捕获异常弹窗显示 traceback + 复制按钮（设计文档 §7）。"""
     from PySide6.QtWidgets import QMessageBox
-    from ui.pages.base_page import ErrorDialog
+    from ui.pages.base import ErrorDialog
 
     def hook(exc_type, exc, tb):
         if issubclass(exc_type, KeyboardInterrupt):
@@ -363,6 +380,10 @@ def _install_excepthook(app=None) -> None:
             return
         detail = "".join(traceback.format_exception(exc_type, exc, tb))
         log.error("未捕获异常: %s", exc)
+        try:
+            runtime_exception("uncaught_exception", exc)
+        except Exception:                             # noqa: BLE001
+            pass
         try:
             ErrorDialog(f"{exc_type.__name__}: {exc}", detail).exec()
         except Exception:                             # noqa: BLE001
@@ -395,62 +416,123 @@ def _prepare_frozen_streams() -> None:
         sys.stderr = logf
 
 
+def _attach_runtime_logging() -> None:
+    """Also send Python logging records to the public runtime log."""
+    try:
+        fh = logging.FileHandler(runtime_log_path(), encoding="utf-8")
+        fh.setLevel(logging.DEBUG)
+        fh.setFormatter(logging.Formatter(
+            "%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
+        logging.getLogger("dye_tool").addHandler(fh)
+    except Exception as err:                            # noqa: BLE001
+        runtime_event("runtime_log_handler_failed", error=err)
+
+
+_QT_MESSAGE_HANDLER = None
+
+
+def _install_qt_message_handler() -> None:
+    """Capture Qt warnings/errors into the same runtime log."""
+    global _QT_MESSAGE_HANDLER
+    try:
+        from PySide6.QtCore import qInstallMessageHandler
+
+        def handler(mode, context, message):
+            try:
+                runtime_event("qt_message", level=str(mode), message=message)
+            except Exception:
+                pass
+
+        _QT_MESSAGE_HANDLER = handler
+        qInstallMessageHandler(handler)
+    except Exception as err:                            # noqa: BLE001
+        runtime_event("qt_handler_failed", error=err)
+
+
 # ═══════════════════════════ GUI ═══════════════════════════
 def main(argv=None) -> int:
     """应用入口：优先处理无界面子命令，否则启动 GUI。"""
     argv = list(sys.argv[1:] if argv is None else argv)
-    _prepare_frozen_streams()
-    # P2 多进程出图的**必需**前置：打包成 exe 后（Windows spawn）子进程会重新执行
-    # 本可执行文件，必须靠 freeze_support 把"子进程启动"接管过来；否则会反复重启
-    # 自身（开发环境下它是无害的 no-op）。
+    t0 = time.perf_counter()
+    rlog = start_runtime_log()
+    runtime_event("app_start", version=VERSION, pid=os.getpid(),
+                  frozen=getattr(sys, "frozen", False), argv=argv,
+                  runtime_log=rlog)
+    startup_phase("begin", t0)
     try:
-        import multiprocessing
-        multiprocessing.freeze_support()
-    except Exception:                                  # noqa: BLE001
-        pass
-
-    code = run_headless(argv)
-    if code is not None:
-        return code
-
-    # Qt 高 DPI 与缩放（须在 QApplication 之前设置）
-    os.environ.setdefault("QT_ENABLE_HIGHDPI_SCALING", "1")
-    # 无显示环境（CI/远程）下允许离屏运行，便于自动化验收
-    if os.environ.get("DYE_TOOL_OFFSCREEN") == "1":
-        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-
-    from PySide6.QtWidgets import QApplication
-    app = QApplication([sys.argv[0]] + argv)
-    app.setApplicationName("dye_tool")
-    app.setApplicationVersion(VERSION)
-    app.setOrganizationName("Photochemistry Dye Lab")
-    _install_excepthook(app)
-
-    # 日志：控制台 + 供 UI 使用的根 logger（GUI 内的日志区另有通道）
-    setup_logging(None, debug=os.environ.get("DYE_TOOL_DEBUG") == "1")
-
-    # 用户配置：打包后位于 exe 同级目录（可写），开发时为项目根
-    cfgp = config_path()
-    cfg = load_config(cfgp if cfgp.exists() else None)
-    if not cfgp.exists():
-        # 首次运行：把 exe 同级的默认配置固化下来，方便用户直接编辑
+        _prepare_frozen_streams()
+        startup_phase("frozen_streams", t0)
+        # P2 多进程出图的**必需**前置：打包成 exe 后（Windows spawn）子进程会重新执行
+        # 本可执行文件，必须靠 freeze_support 把"子进程启动"接管过来；否则会反复重启
+        # 自身（开发环境下它是无害的 no-op）。
         try:
-            from core.config import save_config
-            save_config(cfg, cfgp)
-        except Exception as err:                      # noqa: BLE001
-            log.warning("首次写出默认配置失败: %s", err)
+            import multiprocessing
+            multiprocessing.freeze_support()
+        except Exception:                              # noqa: BLE001
+            pass
+        startup_phase("freeze_support", t0)
 
-    from ui.main_window import MainWindow
-    win = MainWindow(cfg)
-    win.show()
-    log.info("dye_tool v%s 界面已启动 (frozen=%s)", VERSION,
-             getattr(sys, "frozen", False))
+        code = run_headless(argv)
+        if code is not None:
+            runtime_event("headless_exit", code=code)
+            return code
+        startup_phase("headless_check", t0)
 
-    if os.environ.get("DYE_TOOL_SMOKE") == "1":
-        # 冒烟模式：构建并显示后自动退出（自动化验收用）
-        from PySide6.QtCore import QTimer
-        QTimer.singleShot(300, app.quit)
-    return app.exec()
+        # Qt 高 DPI 与缩放（须在 QApplication 之前设置）
+        os.environ.setdefault("QT_ENABLE_HIGHDPI_SCALING", "1")
+        # 无显示环境（CI/远程）下允许离屏运行，便于自动化验收
+        if os.environ.get("DYE_TOOL_OFFSCREEN") == "1":
+            os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+        from PySide6.QtWidgets import QApplication
+        app = QApplication([sys.argv[0]] + argv)
+        startup_phase("qapplication", t0)
+        app.setApplicationName("dye_tool")
+        app.setApplicationVersion(VERSION)
+        app.setOrganizationName("Photochemistry Dye Lab")
+        _install_excepthook(app)
+        _install_qt_message_handler()
+        startup_phase("qt_hooks", t0)
+
+        # 日志：控制台 + 供 UI 使用的根 logger（GUI 内的日志区另有通道）
+        setup_logging(None, debug=os.environ.get("DYE_TOOL_DEBUG") == "1")
+        _attach_runtime_logging()
+
+        # 用户配置：打包后位于 exe 同级目录（可写），开发时为项目根
+        cfgp = config_path()
+        cfg = load_config(cfgp if cfgp.exists() else None)
+        startup_phase("config", t0)
+        if not cfgp.exists():
+            # 首次运行：把 exe 同级的默认配置固化下来，方便用户直接编辑
+            try:
+                from core.config import save_config
+                save_config(cfg, cfgp)
+            except Exception as err:                  # noqa: BLE001
+                log.warning("首次写出默认配置失败: %s", err)
+
+        from ui.window.main_window import MainWindow
+        startup_phase("import_main_window", t0)
+        try:
+            win = MainWindow(cfg)
+        except Exception as exc:                      # noqa: BLE001
+            runtime_exception("MainWindow_init", exc)
+            raise
+        startup_phase("main_window_constructed", t0)
+        win.show()
+        startup_phase("window_shown", t0)
+        log.info("dye_tool v%s 界面已启动 (frozen=%s)", VERSION,
+                 getattr(sys, "frozen", False))
+
+        if os.environ.get("DYE_TOOL_SMOKE") == "1":
+            # 冒烟模式：构建并显示后自动退出（自动化验收用）
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(300, app.quit)
+        rc = app.exec()
+        runtime_event("app_exec_returned", code=rc)
+        return rc
+    except BaseException as exc:                      # noqa: BLE001
+        runtime_exception("main", exc)
+        raise
 
 
 if __name__ == "__main__":

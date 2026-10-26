@@ -55,7 +55,7 @@ def test_display_presets_core_roundtrip_keeps_other_sections(tmp_path):
 
 
 def test_display_preset_bad_keys_tolerated_by_pages(qt_app):
-    from ui.pages.stack_page import StackPage
+    from ui.pages.stack import StackPage
     cfg = default_config()
     page = StackPage(cfg)
     try:
@@ -66,7 +66,7 @@ def test_display_preset_bad_keys_tolerated_by_pages(qt_app):
 
 
 def test_stack_preset_save_apply_roundtrip(qt_app, tmp_path):
-    from ui.pages.stack_page import StackPage
+    from ui.pages.stack import StackPage
     cfg = default_config()
     page = StackPage(cfg)
     try:
@@ -90,7 +90,7 @@ def test_stack_preset_save_apply_roundtrip(qt_app, tmp_path):
 
 
 def test_spectra_preset_save_apply_roundtrip(qt_app, tmp_path):
-    from ui.pages.spectra_page import SpectraPage
+    from ui.pages.spectra import SpectraPage
     cfg = default_config()
     page = SpectraPage(cfg)
     try:

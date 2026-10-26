@@ -13,9 +13,10 @@ ROOT = Path(SPECPATH).resolve().parent          # noqa: F821 —— PyInstaller 
 
 datas = [
     (str(ROOT / "config.yaml"), "."),            # 默认用户配置
-    (str(ROOT / "README.md"), "."),              # 使用说明
 ]
-# 样例数据不进入公开仓库；本地存在时可选打包。
+# 使用说明/样例数据不进入公开仓库；本地存在时可选打包。
+if (ROOT / "README.md").is_file():
+    datas.append((str(ROOT / "README.md"), "."))
 if (ROOT / "samples").is_dir():
     datas.append((str(ROOT / "samples"), "samples"))
 # 中文字体相关的可选资源（若存在一并打包，缺失不影响运行）
@@ -43,7 +44,7 @@ for extra in ("README_设计说明.md",):
 def _project_modules(*dirs: str) -> list:
     """扫描项目内的 .py，返回可 import 的模块名（排序，含包名）。
 
-    * ``core/io.py`` → ``core.io``；``ui/pages/phi_page.py`` → ``ui.pages.phi_page``
+    * ``core/io.py`` → ``core.io``；``ui/pages/phi/page.py`` → ``ui.pages.phi``
     * ``core/__init__.py`` → ``core``；``core/io/__init__.py`` → ``core.io``
       （δ 批 FS1 子包化后仍正确：包名取父目录的点分路径）
     * 跳过 ``__pycache__``（.pyc 不该进 hiddenimports）

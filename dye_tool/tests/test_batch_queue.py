@@ -42,21 +42,23 @@ def test_d10_resolve_out_root_priority_and_absolute(monkeypatch, tmp_path):
 
 
 def test_d10_all_out_root_helpers_agree(monkeypatch, tmp_path):
-    """excel / Φ_Δ / 主页 / 设置页四处 _out_root 与 core.paths 单一实现一致。"""
+    """excel / 页面基类（Φ_Δ、设置页等共用）/ 主页的 out_root 与 core.paths 单一实现一致。"""
     from core import paths
     from core.report.excel_export import _out_root as excel_out_root
-    from ui.pages.phi_page import PhiPage
-    from ui.shell.home_page import HomePage
-    from ui.shell.settings_page import SettingsPage
+    from ui.pages.base import PageBase
+    from ui.pages.home import HomePage
+    from ui.pages.phi import PhiPage
+    from ui.pages.settings import SettingsPage
 
     monkeypatch.chdir(tmp_path)
     cfg = {"gui": {"out_root": "runs"}}
     want = paths.app_root() / "runs"
     fake = SimpleNamespace(cfg=cfg)
     assert excel_out_root(cfg) == want
-    assert PhiPage._out_root(fake) == want
+    assert PageBase.out_root(fake) == want
+    assert PhiPage.out_root is PageBase.out_root
+    assert SettingsPage.out_root is PageBase.out_root
     assert HomePage._out_root(fake) == want
-    assert SettingsPage._out_root(fake) == want
 
 
 def test_d10_pipeline_make_figure_run_dir_uses_single_source(monkeypatch, tmp_path):
@@ -172,8 +174,8 @@ def test_single_directory_helper_same_source():
     """A29.3 结构断言：手动分析与队列调**同一个** core.pipeline.run_directory。"""
     import inspect
 
-    from ui.pages.phi_page import PhiPage
-    from ui.shell.analysis_page import BatchQueuePanel
+    from ui.pages.phi import PhiPage
+    from ui.pages.tasks.queue import BatchQueuePanel
 
     src_phi = inspect.getsource(PhiPage._run)
     src_queue = inspect.getsource(BatchQueuePanel.start_queue)
@@ -199,7 +201,7 @@ def test_queue_task_card_and_ctrl5(qt_app, tmp_path, monkeypatch):
     from PySide6.QtGui import QShortcut
 
     from core.config import default_config
-    from ui.shell.analysis_page import TASKS, AnalysisPage
+    from ui.pages.analysis import TASKS, AnalysisPage
 
     page = AnalysisPage(default_config())
     try:
@@ -214,9 +216,15 @@ def test_queue_task_card_and_ctrl5(qt_app, tmp_path, monkeypatch):
         _destroy(qt_app, page)
 
 
+def _status_column(panel) -> list:
+    from ui.pages.tasks.queue import COL_STATUS
+    return [panel.tbl_queue.item(r, COL_STATUS).text()
+            for r in range(panel.tbl_queue.rowCount())]
+
+
 @pytest.mark.slow
 def test_queue_add_remove_clear(qt_app, tmp_path):
-    from ui.shell.analysis_page import BatchQueuePanel
+    from ui.pages.tasks.queue import BatchQueuePanel
 
     panel = BatchQueuePanel({"gui": {"out_root": str(tmp_path / "runs")}})
     try:
@@ -224,10 +232,10 @@ def test_queue_add_remove_clear(qt_app, tmp_path):
         d1.mkdir()
         d2.mkdir()
         assert panel.add_directories([d1, d2]) == 2
-        assert panel.list_dirs.count() == 2
+        assert panel.tbl_queue.rowCount() == 2
         assert panel.btn_start.isEnabled()
         assert panel.add_directories([d1]) == 0          # 去重
-        panel.list_dirs.item(0).setSelected(True)
+        panel.tbl_queue.selectRow(0)
         panel._remove_selected()
         assert len(panel.dirs) == 1
         panel.clear_dirs()
@@ -239,7 +247,7 @@ def test_queue_add_remove_clear(qt_app, tmp_path):
 @pytest.mark.slow
 def test_queue_run_serial_status_and_summary(qt_app, tmp_path, monkeypatch):
     """A29.1/A29.2/A29.4：串行顺序、逐目录状态、汇总表一目录一行。"""
-    from ui.shell.analysis_page import BatchQueuePanel
+    from ui.pages.tasks.queue import BatchQueuePanel
 
     panel = BatchQueuePanel({"gui": {"out_root": str(tmp_path / "runs")}})
     try:
@@ -259,7 +267,8 @@ def test_queue_run_serial_status_and_summary(qt_app, tmp_path, monkeypatch):
         assert panel.job is not None and panel.job.wait(15000)
         _pump(qt_app, 40)
         assert calls == [d1, d2]                          # 串行、顺序一致
-        assert panel.list_status.count() == 2
+        assert _status_column(panel) == ["完成", "完成"]
+        assert panel.verdict.headline_text() == "2 个目录 · 2 成功 · 0 失败"
         assert panel._last_summary and Path(panel._last_summary).is_file()
         assert panel.btn_open_file.isEnabled()
         from openpyxl import load_workbook
@@ -272,7 +281,7 @@ def test_queue_run_serial_status_and_summary(qt_app, tmp_path, monkeypatch):
 @pytest.mark.slow
 def test_queue_cancel_at_directory_boundary(qt_app, tmp_path, monkeypatch):
     """A29.4：取消在当前目录完成后生效；未跑目录记「取消」并写汇总。"""
-    from ui.shell.analysis_page import BatchQueuePanel
+    from ui.pages.tasks.queue import BatchQueuePanel
 
     panel = BatchQueuePanel({"gui": {"out_root": str(tmp_path / "runs")}})
     try:
@@ -295,7 +304,7 @@ def test_queue_cancel_at_directory_boundary(qt_app, tmp_path, monkeypatch):
         _pump(qt_app, 40)
         statuses = [e.get("status") for e in panel._last_entries]
         assert statuses == ["ok", "cancelled", "cancelled"]
-        assert panel.list_status.count() == 3
+        assert _status_column(panel) == ["完成", "取消", "取消"]
         assert panel._last_summary and Path(panel._last_summary).is_file()
     finally:
         _destroy(qt_app, panel)
@@ -306,7 +315,7 @@ def test_queue_mutex_both_directions(qt_app, tmp_path, monkeypatch):
     """A29.4：队列 ↔ 手动任务双向互斥（禁用/恢复按钮）。"""
     monkeypatch.setenv("DYE_TOOL_CONFIG", str(tmp_path / "c.yaml"))
     from core.config import default_config
-    from ui.shell.analysis_page import AnalysisPage
+    from ui.pages.analysis import AnalysisPage
 
     page = AnalysisPage(default_config())
     try:

@@ -260,7 +260,7 @@ def qt_app():
 def test_library_page_lists_run_figures_and_enables_compose(qt_app, tmp_path,
                                                             monkeypatch) -> None:
     monkeypatch.setenv("DYE_TOOL_CONFIG", str(tmp_path / "c.yaml"))
-    from ui.widgets.dye_library_page import DyeLibraryPage
+    from ui.pages.dye_library import DyeLibraryPage
 
     run = tmp_path / "runs" / "Dye" / "20261018-120000"
     figdir = run / "figures"
@@ -293,7 +293,7 @@ def test_library_page_compose_starts_job_and_disables_button(
     from PySide6.QtWidgets import QDialog
 
     import ui.widgets.layout_dialog as ld
-    from ui.widgets.dye_library_page import DyeLibraryPage
+    from ui.pages.dye_library import DyeLibraryPage
 
     run = tmp_path / "runs" / "Dye" / "20261018-120000"
     (run / "figures").mkdir(parents=True)

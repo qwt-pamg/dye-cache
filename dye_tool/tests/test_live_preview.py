@@ -115,9 +115,9 @@ def test_stale_result_is_discarded(qt_app):
 
 def test_pages_have_live_preview_switch(qt_app):
     from core.config import default_config
-    from ui.pages.phi_page import PhiPage
-    from ui.pages.spectra_page import SpectraPage
-    from ui.pages.stack_page import StackPage
+    from ui.pages.phi import PhiPage
+    from ui.pages.spectra import SpectraPage
+    from ui.pages.stack import StackPage
     pages = [PhiPage(default_config()), SpectraPage(default_config()),
              StackPage(default_config())]
     try:

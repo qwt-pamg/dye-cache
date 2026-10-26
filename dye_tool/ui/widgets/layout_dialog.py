@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox,
                                QPushButton, QSpinBox, QVBoxLayout)
 
 from core.render.layout import MAX_CELLS, LayoutError, LayoutSpec
+from ui import theme
 
 #: 常用规格（按钮式预设；"自定义"只是把两个 spin 设为可编辑）
 PRESETS: tuple[tuple[str, int, int], ...] = (
@@ -107,7 +108,7 @@ class LayoutDialog(QDialog):
         lay.addWidget(out_box)
 
         self.lbl_warn = QLabel("")
-        self.lbl_warn.setStyleSheet("color: #B45309;")
+        theme.mark(self.lbl_warn, "warn")
         self.lbl_warn.setWordWrap(True)
         lay.addWidget(self.lbl_warn)
 

@@ -31,7 +31,7 @@ def _wait_until(app, pred, timeout=25.0):
 
 @pytest.mark.slow
 def test_phi_layout_three_sizes_screenshots(qt_app):
-    from ui.pages.phi_page import PhiPage
+    from ui.pages.phi import PhiPage
     page = PhiPage(default_config())
     try:
         assert 260 <= page.settings_panel.minimumWidth() <= 280
@@ -66,7 +66,7 @@ def test_phi_layout_three_sizes_screenshots(qt_app):
 @pytest.mark.slow
 def test_phi_live_preview_real_data(qt_app, tmp_path):
     from core.pipeline import run_phi_pipeline
-    from ui.pages.phi_page import PhiPage
+    from ui.pages.phi import PhiPage
 
     cfg = default_config()
     cfg.setdefault("gui", {})["out_root"] = str(tmp_path / "runs")
@@ -92,8 +92,8 @@ def test_phi_live_preview_real_data(qt_app, tmp_path):
 @pytest.mark.slow
 def test_stack_live_preview_real_data(qt_app, tmp_path, monkeypatch):
     from types import SimpleNamespace
-    import ui.pages.stack_page as stack_mod
-    from ui.pages.stack_page import StackPage
+    import ui.pages.stack as stack_mod
+    from ui.pages.stack import StackPage
     cfg = default_config()
     cfg.setdefault("gui", {})["out_root"] = str(tmp_path / "runs")
     scans = collect_scans(SAMPLES_UVVIS, cfg)
@@ -137,7 +137,7 @@ def test_stack_live_preview_real_data(qt_app, tmp_path, monkeypatch):
 
 @pytest.mark.slow
 def test_spectra_live_preview_real_data(qt_app, tmp_path):
-    from ui.pages.spectra_page import SpectraPage
+    from ui.pages.spectra import SpectraPage
     cfg = default_config()
     cfg.setdefault("gui", {})["out_root"] = str(tmp_path / "runs")
     paths = sorted(SAMPLES_UVVIS.glob("*.txt"))

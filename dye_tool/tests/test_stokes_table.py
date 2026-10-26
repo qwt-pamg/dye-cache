@@ -38,8 +38,9 @@ pytestmark = pytest.mark.slow
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 #: A41.6 零新配置键：GUI 会话态基线键集
+#: theme 是前端重构（浅色/深色主题）有意新增的界面键
 GUI_BASELINE_KEYS = {"recent_dirs", "max_recent", "out_root", "show_welcome",
-                     "lazy_preview", "window", "nav"}
+                     "lazy_preview", "window", "nav", "theme"}
 
 #: 对比表列序（与 core.report.stokes_table.STOKES_COLUMNS 一致）
 COL_GROUP, COL_ABS, COL_EM, COL_LA, COL_LE, COL_DL, COL_DNU, COL_TIME = range(8)
@@ -117,7 +118,7 @@ def _panel(qt_app, tmp_path, monkeypatch, tag: str = "x"):
     """构造并 show 一个分析页 StokesPanel（cfg 落临时路径）。"""
     monkeypatch.setenv("DYE_TOOL_CONFIG", str(tmp_path / f"cfg_stokes_{tag}.yaml"))
     from core.config import default_config
-    from ui.shell.analysis_page import StokesPanel
+    from ui.pages.tasks.stokes import StokesPanel
 
     panel = StokesPanel(default_config())
     try:
@@ -190,7 +191,7 @@ def _visible_rows(tbl) -> list[int]:
 def test_a41_1_stokes_card_is_sixth_and_single_selection_replaces(qt_app, tmp_path,
                                                                  monkeypatch):
     """A41.1：第 6 卡（Ctrl+6 由 TASKS 动态绑定）；单选列表点击替换不累积。"""
-    from ui.shell.analysis_page import TASKS
+    from ui.pages.analysis import TASKS
 
     # F 道交付时斯托克斯是第 6 卡；G 道及之后可能继续追加任务卡（如第 7 卡「光物理表征」），
     # 因此只钉前 6 卡顺序 + stokes 存在，不禁止后续追加（其余 11 条断言不动）。
@@ -530,7 +531,7 @@ def test_a41_4_panel_export_rules(qt_app, tmp_path, monkeypatch):
 # ═══════════════════════ A41.5 ③对齐与桥接 ═══════════════════════
 def _make_page(qt_app, tmp_path, monkeypatch, tag: str = "p"):
     from core.config import default_config
-    from ui.pages.spectra_page import SpectraPage
+    from ui.pages.spectra import SpectraPage
     monkeypatch.setenv("DYE_TOOL_CONFIG", str(tmp_path / f"cfg_page_{tag}.yaml"))
     page = SpectraPage(default_config())
     page.resize(1100, 760)
@@ -624,7 +625,7 @@ def test_a41_5_mirror_label_single_pair_unpaired_auto_and_empty(qt_app, tmp_path
 def _window(qt_app, tmp_path, monkeypatch):
     monkeypatch.setenv("DYE_TOOL_CONFIG", str(tmp_path / "cfg_stokes_win.yaml"))
     from core.config import default_config
-    from ui.main_window import MainWindow
+    from ui.window.main_window import MainWindow
     cfg = default_config()
     cfg.setdefault("gui", {})["nav"] = "flow"
     cfg["gui"]["show_welcome"] = False

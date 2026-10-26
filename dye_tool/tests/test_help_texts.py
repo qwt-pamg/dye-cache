@@ -99,15 +99,15 @@ def test_install_app_help_handles_dynamic_controls(qt_app):
 
 def test_photophysics_fields_and_labels_have_specific_help(qt_app):
     from ui.help_texts import install_app_help
-    from ui.shell.cards.photophysics import PhotophysicsPanel
+    from ui.pages.tasks.photophysics import PhotophysicsPanel
     p = PhotophysicsPanel(default_config())
     try:
         install_app_help(p)
-        assert '参比' in p.sp_phi_ref.toolTip()
-        assert '参比物' in p.sp_i_ref.toolTip() or 'Φ_F' in p.sp_i_ref.toolTip()
-        assert '吸光度' in p.sp_a_ref.toolTip()
-        assert '折射率' in p.sp_n_ref.toolTip()
-        assert p.sp_eps.toolTip() and '消光' in p.sp_eps.toolTip()
+        assert '参比' in p.tab_phi.sp_phi_ref.toolTip()
+        assert '参比物' in p.tab_phi.sp_i_ref.toolTip() or 'Φ_F' in p.tab_phi.sp_i_ref.toolTip()
+        assert '吸光度' in p.tab_phi.sp_a_ref.toolTip()
+        assert '折射率' in p.tab_phi.sp_n_ref.toolTip()
+        assert p.tab_phi.sp_eps.toolTip() and '消光' in p.tab_phi.sp_eps.toolTip()
         from PySide6.QtWidgets import QLabel
         labels = [w for w in p.findChildren(QLabel) if '参比 φ_ref' in w.text()]
         assert labels and labels[0].toolTip()

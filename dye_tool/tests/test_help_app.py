@@ -17,7 +17,7 @@ def test_app_collector_all_disabled_controls_have_reason(qt_app, tmp_path, monke
                                    QLineEdit, QSpinBox, QWidget)
     from core.config import default_config
     from ui.help_texts import BANNED_HELP, audit_help
-    from ui.main_window import MainWindow
+    from ui.window.main_window import MainWindow
     monkeypatch.setenv('DYE_TOOL_CONFIG', str(tmp_path / 'cfg_help.yaml'))
     cfg = default_config()
     cfg.setdefault('gui', {})

@@ -61,7 +61,7 @@ def _destroy(app, widget) -> None:
 def _window(qt_app, tmp_path, monkeypatch, *, nav: str = "flow"):
     monkeypatch.setenv("DYE_TOOL_CONFIG", str(tmp_path / f"cfg_{nav}.yaml"))
     from core.config import default_config
-    from ui.main_window import MainWindow
+    from ui.window.main_window import MainWindow
 
     cfg = default_config()
     cfg.setdefault("gui", {})
@@ -100,7 +100,7 @@ def test_task_cards_and_shortcuts(qt_app, tmp_path, monkeypatch):
     from PySide6.QtGui import QShortcut
 
     from core.config import default_config
-    from ui.shell.analysis_page import TASKS, AnalysisPage
+    from ui.pages.analysis import TASKS, AnalysisPage
 
     monkeypatch.setenv("DYE_TOOL_CONFIG", str(tmp_path / "c.yaml"))
     page = AnalysisPage(default_config())
@@ -108,7 +108,8 @@ def test_task_cards_and_shortcuts(qt_app, tmp_path, monkeypatch):
         keys = [k for k, *_ in TASKS]
         assert len(keys) == 7 and keys[0] == "phi" and keys[-1] == "peaks"
         assert "compare" not in keys
-        assert page.list.count() == len(TASKS)
+        assert page.task_picker.keys() == keys
+        assert page.current_key() == "phi" and "单线态氧" in page.btn_task.text()
         shortcuts = {sc.key().toString() for sc in page.findChildren(QShortcut)}
         for i in range(1, len(TASKS) + 1):
             assert f"Ctrl+{i}" in shortcuts, f"缺 Ctrl+{i}"
@@ -140,6 +141,18 @@ def test_one_analysis_closed_loop(qt_app, tmp_path, monkeypatch):
         assert rr is not None and bool(rr.ok), "分析结果无效"
         assert phi.table.rowCount() > 0, "结果表为空"
         assert rr.run_dir and Path(rr.run_dir).is_dir(), "run 目录未产出"
+        # 结果动作条：成功后出现「打开输出 / 复制结果 / 下一步」，复制文本含各组
+        assert phi.actions.btn_next_step.isEnabled() and not phi.actions.isHidden()
+        assert phi.actions.btn_copy_result.isEnabled()
+        assert all(g in phi._last_result_text for g in rr.results)
+        # 流程条：分析后前三步完成、自动停在 Φ_Δ；结论卡有内容；「下一步」切到出图导出
+        assert [phi.flow_bar.state(i) for i in range(3)] == ["done"] * 3
+        assert phi.flow_bar.current() == 3 and phi.inspector_stack.currentIndex() == 3
+        assert phi.verdict.mode() == "verdict" and phi.verdict.value_text()
+        phi.actions.btn_next_step.click()
+        assert phi.flow_bar.current() == 4 and phi.center_stack.currentIndex() == 1
+        # 顶部流程条挂在分析页的细条里（不在 Φ_Δ 页自己的布局里）
+        assert phi.top_bar.parent() is not phi
 
 
 def test_export_and_preset_roundtrip(tmp_path):

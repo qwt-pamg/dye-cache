@@ -141,7 +141,7 @@ def test_param_panel_has_figure_and_time_controls(qt_app):
 
 def test_phi_page_recompute_phi_without_refit(qt_app, monkeypatch):
     from types import SimpleNamespace
-    from ui.pages.phi_page import PhiPage
+    from ui.pages.phi import PhiPage
     page = PhiPage(default_config())
     try:
         calls = []
@@ -161,7 +161,7 @@ def test_phi_page_recompute_phi_without_refit(qt_app, monkeypatch):
 
 
 def test_compare_page_workbench_controls_and_result_table(qt_app, tmp_path):
-    from ui.pages.compare_page import ComparePage
+    from ui.pages.compare import ComparePage
 
     page = ComparePage(default_config())
     try:

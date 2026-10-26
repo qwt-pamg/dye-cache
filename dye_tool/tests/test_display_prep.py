@@ -57,9 +57,10 @@ def test_ui_pages_use_display_contract():
     """页面不再直接 import core.analysis.qc / 旧 widget 内部实现。"""
     from pathlib import Path
     root = Path(__file__).resolve().parents[1]
-    stack = (root / "ui/pages/stack_page.py").read_text(encoding="utf-8")
-    spec = (root / "ui/pages/spectra_page.py").read_text(encoding="utf-8")
-    phi = (root / "ui/pages/phi_page.py").read_text(encoding="utf-8")
+    stack = (root / "ui/pages/stack.py").read_text(encoding="utf-8")
+    spec = (root / "ui/pages/spectra.py").read_text(encoding="utf-8")
+    phi = "".join(f.read_text(encoding="utf-8")
+                  for f in sorted((root / "ui/pages/phi").glob("*.py")))
     assert "from ui.prep.display import despiked_for_plot" in stack
     assert "from ui.prep.display import despiked_for_plot" in spec
     assert "from ui.widgets.plot_prep import" not in stack + spec

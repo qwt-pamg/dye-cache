@@ -17,6 +17,7 @@ from typing import Optional
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (QFileDialog, QHBoxLayout, QLabel, QMessageBox,
                                QPushButton, QWidget)
+from ui import theme
 
 log = logging.getLogger("dye_tool.ui.export")
 
@@ -46,7 +47,8 @@ class ExportBar(QWidget):
 
     ``on_workbook`` / ``on_dashboard`` 是**可选回调**：页面的数据（scans / cfg）
     各不相同，导出条不该去猜，由页面把"点下去干什么"注入进来。回调为 None 时
-    对应按钮不显示——所以既有页面一个字不改也照常工作。
+    对应按钮不显示。按钮只在可用时出现：载入数据后出「QC 体检图」，有结果目录后
+    出其余几个；什么都不能做时整条隐藏。
 
     ``message(str)``：常规反馈（已导出/无法打开）走状态栏，不弹模态（FR-24.2）。
     """
@@ -65,7 +67,7 @@ class ExportBar(QWidget):
         self.lbl = QLabel("结果目录：—")
         # 允许选中文本，便于用户复制路径
         self.lbl.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        self.lbl.setStyleSheet("color: #333;")
+        theme.mark(self.lbl, "muted")
         self.btn_open = QPushButton("打开结果文件夹")
         self.btn_copy = QPushButton("导出结果到…")
         self.btn_open.clicked.connect(self.open_run_dir)
@@ -74,7 +76,8 @@ class ExportBar(QWidget):
         self.btn_copy.setEnabled(False)
         lay = QHBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
-        lay.addWidget(self.lbl, 1)
+        lay.addWidget(self.lbl)
+        lay.addStretch(1)                          # 按钮靠右，标签隐藏时也不被拉宽
         # P5：Excel 多 sheet 工作簿（点一下就在结果目录里生成/刷新）
         self.btn_workbook = QPushButton("导出 Excel 汇总")
         self.btn_workbook.setToolTip(
@@ -82,20 +85,17 @@ class ExportBar(QWidget):
             "写到结果目录下，文件名见 config.yaml 的 excel.filename")
         self.btn_workbook.clicked.connect(self._emit_workbook)
         self.btn_workbook.setEnabled(False)
-        if self._on_workbook is None:
-            self.btn_workbook.hide()
         # P8：QC 体检仪表盘（跑正式分析前后都能看）
         self.btn_dashboard = QPushButton("QC 体检图")
         self.btn_dashboard.setToolTip(
             "一页看清数据质量：饱和段、无效点（NaN/±inf）、基线漂移、波长轴错位")
         self.btn_dashboard.clicked.connect(self._emit_dashboard)
         self.btn_dashboard.setEnabled(False)
-        if self._on_dashboard is None:
-            self.btn_dashboard.hide()
         lay.addWidget(self.btn_dashboard)
         lay.addWidget(self.btn_workbook)
         lay.addWidget(self.btn_copy)
         lay.addWidget(self.btn_open)
+        self._sync_visibility()
 
     # ── 对外接口 ──
     def set_run_dir(self, path: Optional[Path | str]) -> None:
@@ -107,11 +107,25 @@ class ExportBar(QWidget):
         # 工作簿要写进结果目录，所以也依赖它；QC 体检只要内存里的 scans，不依赖
         self.btn_workbook.setEnabled(ok and self._on_workbook is not None)
         self.lbl.setText(f"结果目录：{self._run_dir if ok else '—'}")
+        self._sync_visibility()
 
     def set_data_ready(self, ready: bool) -> None:
         """页面载入了数据后调用：让 QC 体检按钮可用（它不需要结果目录）。"""
         if self._on_dashboard is not None:
             self.btn_dashboard.setEnabled(bool(ready))
+        self._sync_visibility()
+
+    def _sync_visibility(self) -> None:
+        """没有结果目录时不摆出灰按钮：只显示当下能点的，全都不能点就整条收起。"""
+        has_dir = self.btn_open.isEnabled()
+        self.lbl.setVisible(has_dir)
+        self.btn_open.setVisible(has_dir)
+        self.btn_copy.setVisible(has_dir)
+        self.btn_workbook.setVisible(self._on_workbook is not None
+                                     and self.btn_workbook.isEnabled())
+        qc_ready = self._on_dashboard is not None and self.btn_dashboard.isEnabled()
+        self.btn_dashboard.setVisible(qc_ready)
+        self.setVisible(has_dir or qc_ready)
 
     def _emit_workbook(self) -> None:
         if self._on_workbook is not None:

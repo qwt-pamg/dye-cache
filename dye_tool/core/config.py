@@ -147,10 +147,12 @@ DEFAULT_CFG: dict = {
             "lazy_preview": True,        # P1 预览懒渲染：首批只画首图，其余后台补渲
             # V2.0 FR-16：导航布局。flow=任务流新导航（默认）| classic=V1.x 平铺五页签
             # （经典模式保留一个版本周期，Q7；该键纳入 DS1 全树校验的 KNOWN_PATHS）。
-            # 注意：本键**只有 GUI 读**（ui/main_window.py），CLI/数值层忽略它。
+            # 注意：本键**只有 GUI 读**（ui/window/main_window.py），CLI/数值层忽略它。
             # V2.3 FR-24.8：窗口几何记忆（0 = 未设置 → 用默认 1560×960）；关窗时写回。
             "window": {"w": 0, "h": 0, "x": 0, "y": 0},
-            "nav": "flow"},
+            "nav": "flow",
+            # 界面主题：light（默认）| dark | system（跟随系统明暗）。只有 GUI 读（ui/theme.py）。
+            "theme": "light"},
     # ══════════════ FR-11 染料命名与档案（V1.1 纯新增） ══════════════
     "dye": {
         "enabled": True,
@@ -246,7 +248,6 @@ DEAD_KEYS: dict[str, str] = {
     "io.emission_extensions": "荧光发射谱按内容判别（Data Points 标记 / Scan mode），"
                               "扩展名统一由 io.extensions 决定；该键从未被读取",
     "run.log_level": "日志级别由 DYE_TOOL_DEBUG 环境变量与 --debug 决定；该键从未被读取",
-    "gui.theme": "界面只有一套浅色主题，该键无消费者，已移除",
     "gui.embed_preview": "预览嵌入策略固定按懒渲染（gui.lazy_preview）实现，该键无消费者",
     "gui.show_dye_column": "文件清单的染料列**始终显示**（无开关）；该键从未实现",
     "gui.show_time_panel": "预分析整定面板**始终存在**（左栏页签）；该键从未实现",
